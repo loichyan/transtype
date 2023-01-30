@@ -169,11 +169,23 @@ impl Parse for WildName {
     }
 }
 
+trait BorrowMut2 {
+    fn borrow_mut2<T>(&mut self) -> &mut T
+    where
+        T: ?Sized,
+        Self: std::borrow::BorrowMut<T>,
+    {
+        std::borrow::BorrowMut::borrow_mut(self)
+    }
+}
+
+impl<T: ?Sized> BorrowMut2 for T {}
+
 pub trait DeriveInputExt: BorrowMut<DeriveInput> {
     fn fields_iter<'a>(
         &'a mut self,
     ) -> Box<dyn 'a + Iterator<Item = &'a mut Punctuated<Field, Token![,]>>> {
-        match &mut self.borrow_mut().data {
+        match &mut self.borrow_mut2::<DeriveInput>().data {
             Data::Struct(data) => Box::new(data.fields.get_fields().into_iter()),
             Data::Enum(data) => Box::new(
                 data.variants
@@ -189,7 +201,7 @@ impl<T: BorrowMut<DeriveInput>> DeriveInputExt for T {}
 
 pub trait FieldsExt: BorrowMut<Fields> {
     fn get_fields(&mut self) -> Option<&mut Punctuated<Field, Token![,]>> {
-        match self.borrow_mut() {
+        match self.borrow_mut2::<Fields>() {
             Fields::Named(fields) => Some(&mut fields.named),
             Fields::Unnamed(fields) => Some(&mut fields.unnamed),
             Fields::Unit => None,
@@ -201,7 +213,7 @@ impl<T: BorrowMut<Fields>> FieldsExt for T {}
 
 pub trait PathExt: BorrowMut<Path> {
     fn get_ident_mut(&mut self) -> Option<&mut Ident> {
-        let path = self.borrow_mut();
+        let path = self.borrow_mut2::<Path>();
         if path.leading_colon.is_none()
             && path.segments.len() == 1
             && path.segments[0].arguments.is_none()
