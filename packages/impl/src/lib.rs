@@ -12,6 +12,12 @@ use proc_macro::TokenStream;
 use syn::{parse::Nothing, parse_macro_input, DeriveInput};
 use transform::TransformInput;
 
+mod kw {
+    use syn::custom_keyword;
+
+    custom_keyword!(from);
+}
+
 #[proc_macro_attribute]
 pub fn define(attr: TokenStream, input: TokenStream) -> TokenStream {
     parse_macro_input!(attr as Nothing);

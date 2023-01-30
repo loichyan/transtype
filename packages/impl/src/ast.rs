@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::ToTokens;
 use syn::{
     parse::{Nothing as SynNothing, Parse, ParseStream},
-    token, DeriveInput, Path, Result, Token,
+    token, DeriveInput, Fields, Path, Result, Token,
 };
 use transtype_lib::{Command, TransformOutput};
 
@@ -24,44 +24,24 @@ impl ToTokens for Nothing {
     fn to_tokens(&self, _: &mut TokenStream) {}
 }
 
-#[doc(hidden)]
-macro_rules! __delimited_impl {
-    ($content:ident in $lookahead:ident => $fallback:expr) => {{
-        let input = $lookahead;
-        let $lookahead = $lookahead.lookahead1();
-        if $lookahead.peek(token::Brace) {
+macro_rules! delimited {
+    ($content:ident in $cursor:expr) => {{
+        let input = $cursor;
+        let lookahead = input.lookahead1();
+        if lookahead.peek(token::Brace) {
             $crate::ast::Delimiter::Brace(::syn::braced!($content in input))
-        } else if $lookahead.peek(token::Bracket) {
+        } else if lookahead.peek(token::Bracket) {
             $crate::ast::Delimiter::Bracket(::syn::bracketed!($content in input))
-        } else if $lookahead.peek(token::Paren) {
+        } else if lookahead.peek(token::Paren) {
             $crate::ast::Delimiter::Paren(::syn::parenthesized!($content in input))
         } else {
-            $fallback
-        }
-    }};
-}
-
-macro_rules! delimited {
-    ($content:ident in $cursor:expr => $fallback:expr) => {{
-        let lookahead = $cursor;
-        __delimited_impl! {
-            $content in lookahead
-            => $fallback
-        }
-    }};
-    ($content:ident in $cursor:expr) => {{
-        let lookahead = $cursor;
-        __delimited_impl! {
-            $content in lookahead
-            => {
-                return Err(lookahead.error());
-            }
+            return Err(lookahead.error());
         }
     }};
 }
 
 pub struct PipeCommand {
-    pub fat_arrow_tk: Token![=>],
+    pub fat_arrow: Token![=>],
     pub path: Path,
     pub delimiter: Delimiter,
     pub args: TokenStream,
@@ -84,7 +64,7 @@ impl Parse for PipeCommand {
     fn parse(input: ParseStream) -> Result<Self> {
         let content;
         Ok(Self {
-            fat_arrow_tk: input.parse()?,
+            fat_arrow: input.parse()?,
             path: input.parse()?,
             delimiter: delimited!(content in input),
             args: content.parse()?,
@@ -97,15 +77,24 @@ pub enum Delimiter {
     Brace(token::Brace),
     Bracket(token::Bracket),
     Paren(token::Paren),
+    None,
 }
 
 impl Delimiter {
-    #[allow(dead_code)]
+    pub fn from_feilds(fields: &Fields) -> Self {
+        match fields {
+            Fields::Named(fields) => Delimiter::Brace(fields.brace_token),
+            Fields::Unnamed(fields) => Delimiter::Paren(fields.paren_token),
+            Fields::Unit => Delimiter::None,
+        }
+    }
+
     pub fn surround(&self, tokens: &mut TokenStream, f: impl FnOnce(&mut TokenStream)) {
         match self {
             Delimiter::Brace(t) => t.surround(tokens, f),
             Delimiter::Bracket(t) => t.surround(tokens, f),
             Delimiter::Paren(t) => t.surround(tokens, f),
+            Delimiter::None => f(tokens),
         }
     }
 }

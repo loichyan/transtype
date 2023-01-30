@@ -5,10 +5,15 @@ use transtype::pipe;
 #[transtype::define]
 struct A {
     pub a: String,
-    pub b: Option<String>,
+    pub b: usize,
 }
 
 pipe! {
     A
-    => wrap(Option)
+}
+
+pipe! {
+    A
+    => rename(WrappedA)
+    => wrap(Option from A)
 }
