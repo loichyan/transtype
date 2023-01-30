@@ -16,5 +16,5 @@ struct B {
 
 pipe! {
     A
-    => extend(B)
+    -> extend(B)
 }

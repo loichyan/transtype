@@ -41,7 +41,7 @@ macro_rules! delimited {
 }
 
 pub struct PipeCommand {
-    pub fat_arrow: Token![=>],
+    pub r_arrow_token: Token![->],
     pub path: Path,
     pub delimiter: Delimiter,
     pub args: TokenStream,
@@ -64,7 +64,7 @@ impl Parse for PipeCommand {
     fn parse(input: ParseStream) -> Result<Self> {
         let content;
         Ok(Self {
-            fat_arrow: input.parse()?,
+            r_arrow_token: input.parse()?,
             path: input.parse()?,
             delimiter: delimited!(content in input),
             args: content.parse()?,

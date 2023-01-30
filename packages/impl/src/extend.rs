@@ -21,7 +21,7 @@ impl Command for Extend {
                 path,
                 data: None,
                 args: quote!(
-                    => extend(@#data)
+                    -> extend(@#data)
                 ),
             },
             ExtendArgs::Into(ExtendInto { data: mut dest, .. }) => {

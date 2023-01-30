@@ -14,6 +14,6 @@ pipe! {
 
 pipe! {
     A
-    => rename(WrappedA)
-    => wrap(Option from A)
+    -> rename(WrappedA)
+    -> wrap(Option from A)
 }

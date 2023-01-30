@@ -1,3 +1,4 @@
+use crate::{ast::Delimiter, kw};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -5,8 +6,6 @@ use syn::{
     parse_quote, Data, DeriveInput, Ident, Member, Result, Type,
 };
 use transtype_lib::{Command, TransformOutput};
-
-use crate::{ast::Delimiter, kw};
 
 pub struct Wrap;
 
