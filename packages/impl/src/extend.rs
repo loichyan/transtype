@@ -73,28 +73,22 @@ impl Parse for ExtendInto {
 pub struct ExtendStruct {
     pub struct_tk: Token![struct],
     pub fields: Fields,
-    pub semi: Option<Token![;]>,
 }
 
 impl Parse for ExtendStruct {
     fn parse(input: ParseStream) -> Result<Self> {
-        let struct_tk = input.parse()?;
-        let fields;
-        let semi;
-        if input.peek(Token![;]) {
-            fields = Fields::Unit;
-            semi = Some(input.parse()?);
-        } else if input.peek(token::Paren) {
-            fields = Fields::Unnamed(input.parse()?);
-            semi = None;
-        } else {
-            fields = Fields::Named(input.parse()?);
-            semi = None;
-        }
         Ok(Self {
-            struct_tk,
-            fields,
-            semi,
+            struct_tk: input.parse()?,
+            fields: {
+                let lookahead = input.lookahead1();
+                if lookahead.peek(token::Paren) {
+                    Fields::Unnamed(input.parse()?)
+                } else if input.peek(token::Brace) {
+                    Fields::Named(input.parse()?)
+                } else {
+                    return Err(lookahead.error());
+                }
+            },
         })
     }
 }

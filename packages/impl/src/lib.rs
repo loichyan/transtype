@@ -1,9 +1,11 @@
+#[macro_use]
+mod utils;
+
 mod define;
 mod extend;
 mod pipe;
 mod rename;
 mod transform;
-mod utils;
 mod wrap;
 
 use pipe::PipeInput;

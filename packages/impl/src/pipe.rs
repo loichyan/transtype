@@ -1,8 +1,7 @@
-use crate::define::QuoteExecution;
+use crate::{define::QuoteExecution, utils::Delimiter};
 use proc_macro2::TokenStream;
 use quote::ToTokens;
 use syn::{
-    parenthesized,
     parse::{Parse, ParseStream},
     token, DeriveInput, Path, Result, Token,
 };
@@ -36,7 +35,7 @@ impl Parse for PipeInput {
 pub struct PipeCommand<T = TokenStream> {
     pub fat_arrow_tk: Token![=>],
     pub path: Path,
-    pub paren_tk: token::Paren,
+    pub delimiter: Delimiter,
     pub args: T,
 }
 
@@ -45,13 +44,13 @@ impl PipeCommand<TokenStream> {
         let Self {
             fat_arrow_tk,
             path,
-            paren_tk,
+            delimiter,
             args: content,
         } = self;
         Ok(PipeCommand {
             fat_arrow_tk,
             path,
-            paren_tk,
+            delimiter,
             args: syn::parse2(content)?,
         })
     }
@@ -74,7 +73,7 @@ impl<T: Parse> Parse for PipeCommand<T> {
         Ok(Self {
             fat_arrow_tk: input.parse()?,
             path: input.parse()?,
-            paren_tk: parenthesized!(content in input),
+            delimiter: delimited!(content in input),
             args: content.parse()?,
         })
     }
