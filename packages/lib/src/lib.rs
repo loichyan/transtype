@@ -18,27 +18,35 @@ pub trait Command: Sized {
     type Args: Parse;
 
     fn execute(data: DeriveInput, args: Self::Args) -> Result<CommandOutput>;
-
-    /// # Panic
-    ///
-    /// Panics if returned output is not [`Piped`](CommandOutput::Piped).
-    fn expand_piped(input: CommandInput<Self>) -> Result<TokenStream> {
-        let (data, d) = input.data.swap_content(());
-        let (_, a) = input.args.swap_content(());
-        let rest = input.rest;
-        if let CommandOutput::Piped(d) = Self::execute(d, a)? {
-            let (data, _) = data.swap_content(d);
-            Ok(quote!(::transtype::transform! { #data #rest }))
-        } else {
-            panic!("command must return piped output")
-        }
-    }
 }
 
 pub struct CommandInput<T: Command> {
     data: NamedArg<kw::data, DeriveInput>,
     args: NamedArg<kw::args, T::Args>,
     rest: NamedArg<kw::rest, TokenStream>,
+}
+
+impl<T: Command> CommandInput<T> {
+    pub fn expand(self) -> Result<TokenStream> {
+        let data = self.data.content;
+        let args = self.args.content;
+        let rest = self.rest.content;
+        match T::execute(data, args)? {
+            CommandOutput::Piped(data) => Ok(quote!(::transtype::transform! {
+               data={#data}
+               args={}
+               rest={#rest}
+            })),
+            CommandOutput::Consumed(tokens) => Ok(tokens),
+            CommandOutput::Transformed { path, data, args } => Ok(quote!(
+                #path! {
+                    data={#data}
+                    args={#args}
+                    rest={#rest}
+                }
+            )),
+        }
+    }
 }
 
 pub enum CommandOutput {
