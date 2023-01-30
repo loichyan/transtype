@@ -2,8 +2,9 @@ use proc_macro2::TokenStream;
 use quote::ToTokens;
 use syn::{
     parse::{Nothing as SynNothing, Parse, ParseStream},
-    token, Result,
+    token, DeriveInput, Path, Result, Token,
 };
+use transtype_lib::{Command, TransformOutput};
 
 pub struct Nothing(SynNothing);
 
@@ -29,11 +30,11 @@ macro_rules! __delimited_impl {
         let input = $lookahead;
         let $lookahead = $lookahead.lookahead1();
         if $lookahead.peek(token::Brace) {
-            $crate::utils::Delimiter::Brace(::syn::braced!($content in input))
+            $crate::ast::Delimiter::Brace(::syn::braced!($content in input))
         } else if $lookahead.peek(token::Bracket) {
-            $crate::utils::Delimiter::Bracket(::syn::bracketed!($content in input))
+            $crate::ast::Delimiter::Bracket(::syn::bracketed!($content in input))
         } else if $lookahead.peek(token::Paren) {
-            $crate::utils::Delimiter::Paren(::syn::parenthesized!($content in input))
+            $crate::ast::Delimiter::Paren(::syn::parenthesized!($content in input))
         } else {
             $fallback
         }
@@ -57,6 +58,38 @@ macro_rules! delimited {
             }
         }
     }};
+}
+
+pub struct PipeCommand {
+    pub fat_arrow_tk: Token![=>],
+    pub path: Path,
+    pub delimiter: Delimiter,
+    pub args: TokenStream,
+}
+
+impl PipeCommand {
+    pub fn execute<T: Command>(self, data: DeriveInput) -> Result<TransformOutput> {
+        let Self { path, args, .. } = self;
+        T::execute(data, syn::parse2(args)?, &mut TokenStream::default()).map_err(|mut e| {
+            e.combine(syn::Error::new_spanned(
+                &path,
+                "an error occurs in this command",
+            ));
+            e
+        })
+    }
+}
+
+impl Parse for PipeCommand {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let content;
+        Ok(Self {
+            fat_arrow_tk: input.parse()?,
+            path: input.parse()?,
+            delimiter: delimited!(content in input),
+            args: content.parse()?,
+        })
+    }
 }
 
 #[derive(Clone, Copy)]

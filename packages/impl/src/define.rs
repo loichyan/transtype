@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
-use syn::{DeriveInput, Ident, Path, Result};
-use transtype_lib::{Command, CommandOutput};
+use syn::{DeriveInput, Ident, Result};
+use transtype_lib::{Command, TransformOutput};
 
 pub fn expand(input: DeriveInput) -> Result<TokenStream> {
     Ok(QuoteDefinition {
@@ -16,40 +16,18 @@ pub struct Define;
 impl Command for Define {
     type Args = Ident;
 
-    fn execute(data: DeriveInput, name: Self::Args) -> Result<CommandOutput> {
-        Ok(CommandOutput::Consumed(
-            QuoteDefinition {
+    fn execute(
+        data: DeriveInput,
+        name: Self::Args,
+        _: &mut TokenStream,
+    ) -> Result<TransformOutput> {
+        Ok(TransformOutput::Consumed {
+            data: QuoteDefinition {
                 ident: &name,
                 data: &data,
             }
             .into_token_stream(),
-        ))
-    }
-}
-
-pub struct QuoteExecution<'a> {
-    pub path: &'a Path,
-    pub data: Option<&'a DeriveInput>,
-    pub args: Option<&'a TokenStream>,
-    pub rest: Option<&'a TokenStream>,
-}
-
-impl ToTokens for QuoteExecution<'_> {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        let Self {
-            path,
-            data,
-            args,
-            rest,
-        } = self;
-        tokens.extend(quote!(
-            #path! {
-                data={#data}
-                args={#args}
-                rest={#rest}
-            }
-
-        ))
+        })
     }
 }
 

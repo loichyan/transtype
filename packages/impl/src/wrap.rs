@@ -1,13 +1,18 @@
+use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{parse_quote, Data, DeriveInput, Ident, Result, Type};
-use transtype_lib::{Command, CommandOutput};
+use transtype_lib::{Command, TransformOutput};
 
 pub struct Wrap;
 
 impl Command for Wrap {
     type Args = Ident;
 
-    fn execute(mut data: DeriveInput, name: Self::Args) -> Result<CommandOutput> {
+    fn execute(
+        mut data: DeriveInput,
+        name: Self::Args,
+        _: &mut TokenStream,
+    ) -> Result<TransformOutput> {
         match &mut data.data {
             Data::Struct(data) => {
                 for field in data.fields.iter_mut() {
@@ -31,13 +36,15 @@ impl Command for Wrap {
         }
 
         // TODO: impl `Wrapper`
-        Ok(CommandOutput::Consumed(quote!(
-            const _: () = {
-                ::transtype::private::requires_wrapper::<
-                    #name::<::transtype::private::InnerType>,
-                >();
-            };
-            #data
-        )))
+        Ok(TransformOutput::Consumed {
+            data: quote!(
+                const _: () = {
+                    ::transtype::private::requires_wrapper::<
+                        #name::<::transtype::private::InnerType>,
+                    >();
+                };
+                #data
+            ),
+        })
     }
 }

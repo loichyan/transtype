@@ -14,52 +14,82 @@ mod kw {
     custom_keyword!(rest);
 }
 
-pub trait Command: Sized {
+pub trait Command {
     type Args: Parse;
 
-    fn execute(data: DeriveInput, args: Self::Args) -> Result<CommandOutput>;
+    fn execute(
+        data: DeriveInput,
+        args: Self::Args,
+        rest: &mut TokenStream,
+    ) -> Result<TransformOutput>;
 }
 
-pub struct CommandInput<T: Command> {
-    data: NamedArg<kw::data, DeriveInput>,
+impl<T: Command> Transformer for T {
+    type Data = DeriveInput;
+    type Args = <T as Command>::Args;
+
+    fn transform(
+        data: Self::Data,
+        args: Self::Args,
+        rest: &mut TokenStream,
+    ) -> Result<TransformOutput> {
+        T::execute(data, args, rest)
+    }
+}
+
+pub trait Transformer: Sized {
+    type Data: Parse;
+    type Args: Parse;
+
+    fn transform(
+        data: Self::Data,
+        args: Self::Args,
+        rest: &mut TokenStream,
+    ) -> Result<TransformOutput>;
+}
+
+pub struct TransformInput<T: Transformer> {
+    data: NamedArg<kw::data, T::Data>,
     args: NamedArg<kw::args, T::Args>,
     rest: NamedArg<kw::rest, TokenStream>,
 }
 
-impl<T: Command> CommandInput<T> {
-    pub fn expand(self) -> Result<TokenStream> {
+impl<T: Transformer> TransformInput<T> {
+    pub fn transform(self) -> Result<TokenStream> {
         let data = self.data.content;
         let args = self.args.content;
-        let rest = self.rest.content;
-        match T::execute(data, args)? {
-            CommandOutput::Piped(data) => Ok(quote!(::transtype::transform! {
-               data={#data}
-               args={}
-               rest={#rest}
-            })),
-            CommandOutput::Consumed(tokens) => Ok(tokens),
-            CommandOutput::Transformed { path, data, args } => Ok(quote!(
-                #path! {
-                    data={#data}
-                    args={#args}
-                    rest={#rest}
+        let mut rest = self.rest.content;
+        Ok(match T::transform(data, args, &mut rest)? {
+            TransformOutput::Piped { data } => {
+                if rest.is_empty() {
+                    data.into_token_stream()
+                } else {
+                    quote!(::transtype::transform! {
+                        data={#data}
+                        args={}
+                        rest={#rest}
+                    })
                 }
-            )),
-        }
+            }
+            TransformOutput::Consumed { data } => {
+                if !rest.is_empty() {
+                    return Err(syn::Error::new_spanned(
+                        rest,
+                        "a consumer command should not be followed with other commands",
+                    ));
+                }
+                data.into_token_stream()
+            }
+            TransformOutput::Transferred { path, data, args } => quote!(#path! {
+                data={#data}
+                args={#args}
+                rest={#rest}
+            }),
+        })
     }
 }
 
-pub enum CommandOutput {
-    Piped(DeriveInput),
-    Consumed(TokenStream),
-    Transformed {
-        path: Path,
-        data: Option<DeriveInput>,
-        args: TokenStream,
-    },
-}
-
-impl<T: Command> Parse for CommandInput<T> {
+impl<T: Transformer> Parse for TransformInput<T> {
     fn parse(input: ParseStream) -> Result<Self> {
         Ok(Self {
             data: input.parse()?,
@@ -69,47 +99,25 @@ impl<T: Command> Parse for CommandInput<T> {
     }
 }
 
-pub struct NamedArg<K, V> {
-    pub name: K,
-    pub eq_tk: Token![=],
-    pub brace_tk: token::Brace,
-    pub content: V,
+pub enum TransformOutput {
+    Piped {
+        data: DeriveInput,
+    },
+    Consumed {
+        data: TokenStream,
+    },
+    Transferred {
+        path: Path,
+        data: Option<DeriveInput>,
+        args: TokenStream,
+    },
 }
 
-impl<K, V> NamedArg<K, V>
-where
-    K: Parse,
-{
-    pub fn swap_content<V2>(self, content: V2) -> (NamedArg<K, V2>, V) {
-        let NamedArg {
-            name: key,
-            eq_tk,
-            brace_tk,
-            content: old,
-        } = self;
-        (
-            NamedArg {
-                name: key,
-                eq_tk,
-                brace_tk,
-                content,
-            },
-            old,
-        )
-    }
-
-    pub fn parse_with(
-        input: ParseStream,
-        f: impl FnOnce(ParseStream) -> Result<V>,
-    ) -> Result<Self> {
-        let content;
-        Ok(Self {
-            name: input.parse()?,
-            eq_tk: input.parse()?,
-            brace_tk: braced!(content in input),
-            content: f(&content)?,
-        })
-    }
+struct NamedArg<K, V> {
+    name: K,
+    eq_tk: Token![=],
+    brace_tk: token::Brace,
+    content: V,
 }
 
 impl<K, V> Parse for NamedArg<K, V>
@@ -118,7 +126,13 @@ where
     V: Parse,
 {
     fn parse(input: ParseStream) -> Result<Self> {
-        Self::parse_with(input, V::parse)
+        let content;
+        Ok(Self {
+            name: input.parse()?,
+            eq_tk: input.parse()?,
+            brace_tk: braced!(content in input),
+            content: content.parse()?,
+        })
     }
 }
 

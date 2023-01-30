@@ -1,18 +1,23 @@
+use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
     parse::{Parse, ParseStream},
     token, Data, DeriveInput, Fields, Path, Result, Token,
 };
-use transtype_lib::{Command, CommandOutput};
+use transtype_lib::{Command, TransformOutput};
 
 pub struct Extend;
 
 impl Command for Extend {
     type Args = ExtendArgs;
 
-    fn execute(data: DeriveInput, args: Self::Args) -> Result<CommandOutput> {
+    fn execute(
+        data: DeriveInput,
+        args: Self::Args,
+        _: &mut TokenStream,
+    ) -> Result<TransformOutput> {
         Ok(match args {
-            ExtendArgs::Path(path) => CommandOutput::Transformed {
+            ExtendArgs::Path(path) => TransformOutput::Transferred {
                 path,
                 data: None,
                 args: quote!(
@@ -31,7 +36,7 @@ impl Command for Extend {
                     }
                     _ => todo!(),
                 }
-                CommandOutput::Piped(dest)
+                TransformOutput::Piped { data: dest }
             }
             ExtendArgs::Struct(_) => todo!(),
         })

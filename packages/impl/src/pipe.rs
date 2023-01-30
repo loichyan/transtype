@@ -1,80 +1,46 @@
-use crate::{define::QuoteExecution, utils::Delimiter};
+use crate::ast::Nothing;
 use proc_macro2::TokenStream;
-use quote::ToTokens;
 use syn::{
     parse::{Parse, ParseStream},
-    token, DeriveInput, Path, Result, Token,
+    parse_quote, Path, Result,
 };
-use transtype_lib::{Command, CommandOutput};
+use transtype_lib::{TransformInput, TransformOutput, Transformer};
 
-pub fn expand(input: PipeInput) -> Result<TokenStream> {
-    let PipeInput { path, rest } = input;
-    Ok(QuoteExecution {
-        path: &path,
-        data: None,
-        args: None,
-        rest: Some(&rest),
-    }
-    .into_token_stream())
+pub fn expand(input: TokenStream) -> Result<TokenStream> {
+    let input: TransformInput<Pipe> = parse_quote!(
+        data={}
+        args={#input}
+        rest={}
+    );
+    input.transform()
 }
 
-pub struct PipeInput {
+struct Pipe;
+
+impl Transformer for Pipe {
+    type Data = Nothing;
+    type Args = PipeArgs;
+
+    fn transform(_: Nothing, args: Self::Args, _: &mut TokenStream) -> Result<TransformOutput> {
+        let PipeArgs { path, pipes } = args;
+        Ok(TransformOutput::Transferred {
+            path,
+            data: None,
+            args: pipes,
+        })
+    }
+}
+
+struct PipeArgs {
     path: Path,
-    rest: TokenStream,
+    pipes: TokenStream,
 }
 
-impl Parse for PipeInput {
+impl Parse for PipeArgs {
     fn parse(input: ParseStream) -> Result<Self> {
         Ok(Self {
             path: input.parse()?,
-            rest: input.parse()?,
-        })
-    }
-}
-
-pub struct PipeCommand<T = TokenStream> {
-    pub fat_arrow_tk: Token![=>],
-    pub path: Path,
-    pub delimiter: Delimiter,
-    pub args: T,
-}
-
-impl PipeCommand<TokenStream> {
-    pub fn parse_into<T: Parse>(self) -> Result<PipeCommand<T>> {
-        let Self {
-            fat_arrow_tk,
-            path,
-            delimiter,
-            args: content,
-        } = self;
-        Ok(PipeCommand {
-            fat_arrow_tk,
-            path,
-            delimiter,
-            args: syn::parse2(content)?,
-        })
-    }
-
-    pub fn execute_as<T: Command>(self, data: DeriveInput) -> Result<CommandOutput> {
-        let cmd = self.parse_into::<T::Args>()?;
-        T::execute(data, cmd.args).map_err(|mut e| {
-            e.combine(syn::Error::new_spanned(
-                &cmd.path,
-                "an error occurs in this command",
-            ));
-            e
-        })
-    }
-}
-
-impl<T: Parse> Parse for PipeCommand<T> {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let content;
-        Ok(Self {
-            fat_arrow_tk: input.parse()?,
-            path: input.parse()?,
-            delimiter: delimited!(content in input),
-            args: content.parse()?,
+            pipes: input.parse()?,
         })
     }
 }

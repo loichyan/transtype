@@ -1,5 +1,5 @@
 #[macro_use]
-mod utils;
+mod ast;
 
 mod define;
 mod extend;
@@ -8,18 +8,9 @@ mod rename;
 mod transform;
 mod wrap;
 
-use pipe::PipeInput;
 use proc_macro::TokenStream;
 use syn::{parse::Nothing, parse_macro_input, DeriveInput};
 use transform::TransformInput;
-
-mod kw {
-    use syn::custom_keyword;
-
-    custom_keyword!(data);
-    custom_keyword!(args);
-    custom_keyword!(rest);
-}
 
 #[proc_macro_attribute]
 pub fn define(attr: TokenStream, input: TokenStream) -> TokenStream {
@@ -32,7 +23,7 @@ pub fn define(attr: TokenStream, input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 pub fn pipe(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as PipeInput);
+    let input = parse_macro_input!(input as proc_macro2::TokenStream);
     pipe::expand(input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
