@@ -1,6 +1,10 @@
-# Transtype
+# 🧬 Transtype
 
-Utility derive macros to facilitate common type transformations.
+Utility macros to facilitate common type transformations.
+
+## 📝 Todo
+
+- [ ] Support generics.
 
 ## ⚖️ License
 

@@ -1,0 +1,19 @@
+[package]
+name = "transtype-impl"
+version = "0.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+
+[dependencies.transtype-lib]
+path = "../lib"
+
+[dependencies.syn]
+version = "1.0"
+features = ["full"]
