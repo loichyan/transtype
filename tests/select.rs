@@ -3,8 +3,9 @@
 use transtype::pipe;
 
 #[transtype::define]
-#[derive1(Debug, Clone, Copy)]
-#[derive2(Debug)]
+#[derive1(Clone, Copy)]
+#[derive2(Clone)]
+#[derive(Debug)]
 struct A {
     pub a: String,
     pub b: usize,
@@ -12,6 +13,10 @@ struct A {
 
 pipe! {
     A
-    -> select_attr(derive1 => derive)
+    -> select_attr(
+        derive1 => derive,
+        derive2 => _,
+        _,
+    )
     -> select(b)
 }

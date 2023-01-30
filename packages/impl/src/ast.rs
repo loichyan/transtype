@@ -112,11 +112,14 @@ impl Parse for Selectors {
 impl Selectors {
     pub fn select(&self, name: &Ident) -> Option<Ident> {
         for arg in self.0.iter() {
-            if name == &arg.name {
-                match &arg.rename {
-                    Some(rename) => return Some(rename.clone()),
+            match &arg.name {
+                WildName::Wild(_) => return Some(name.clone()),
+                WildName::Name(pat) if name == pat => match &arg.rename {
+                    Some(WildName::Name(rename)) => return Some(rename.clone()),
                     None => return Some(name.clone()),
-                }
+                    _ => return None,
+                },
+                _ => {}
             }
         }
         None
@@ -124,9 +127,9 @@ impl Selectors {
 }
 
 pub struct Selector {
-    pub name: Ident,
+    pub name: WildName,
     pub fat_arrow_token: Option<Token![=>]>,
-    pub rename: Option<Ident>,
+    pub rename: Option<WildName>,
 }
 
 impl Parse for Selector {
@@ -144,6 +147,24 @@ impl Parse for Selector {
                 fat_arrow_token: None,
                 rename: None,
             })
+        }
+    }
+}
+
+pub enum WildName {
+    Wild(Token![_]),
+    Name(Ident),
+}
+
+impl Parse for WildName {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let lookahead = input.lookahead1();
+        if lookahead.peek(Token![_]) {
+            input.parse().map(Self::Wild)
+        } else if lookahead.peek(Ident) {
+            input.parse().map(Self::Name)
+        } else {
+            Err(lookahead.error())
         }
     }
 }
