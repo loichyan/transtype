@@ -1,8 +1,10 @@
 use proc_macro2::TokenStream;
 use quote::ToTokens;
+use std::borrow::BorrowMut;
 use syn::{
     parse::{Nothing as SynNothing, Parse, ParseStream},
-    token, DeriveInput, Fields, Path, Result, Token,
+    punctuated::Punctuated,
+    token, Data, DeriveInput, Field, Fields, Ident, Path, Result, Token,
 };
 use transtype_lib::{Command, TransformOutput};
 
@@ -98,3 +100,96 @@ impl Delimiter {
         }
     }
 }
+
+pub struct Selectors(pub Punctuated<Selector, Token![,]>);
+
+impl Parse for Selectors {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Punctuated::parse_terminated(input).map(Self)
+    }
+}
+
+impl Selectors {
+    pub fn select(&self, name: &Ident) -> Option<Ident> {
+        for arg in self.0.iter() {
+            if name == &arg.name {
+                match &arg.rename {
+                    Some(rename) => return Some(rename.clone()),
+                    None => return Some(name.clone()),
+                }
+            }
+        }
+        None
+    }
+}
+
+pub struct Selector {
+    pub name: Ident,
+    pub fat_arrow_token: Option<Token![=>]>,
+    pub rename: Option<Ident>,
+}
+
+impl Parse for Selector {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let name = input.parse()?;
+        if input.peek(Token![=>]) {
+            Ok(Self {
+                name,
+                fat_arrow_token: Some(input.parse()?),
+                rename: Some(input.parse()?),
+            })
+        } else {
+            Ok(Self {
+                name,
+                fat_arrow_token: None,
+                rename: None,
+            })
+        }
+    }
+}
+
+pub trait DeriveInputExt: BorrowMut<DeriveInput> {
+    fn fields_iter<'a>(
+        &'a mut self,
+    ) -> Box<dyn 'a + Iterator<Item = &'a mut Punctuated<Field, Token![,]>>> {
+        match &mut self.borrow_mut().data {
+            Data::Struct(data) => Box::new(data.fields.get_fields().into_iter()),
+            Data::Enum(data) => Box::new(
+                data.variants
+                    .iter_mut()
+                    .filter_map(|variant| variant.fields.get_fields()),
+            ),
+            Data::Union(data) => Box::new(std::iter::once(&mut data.fields.named)),
+        }
+    }
+}
+
+impl<T: BorrowMut<DeriveInput>> DeriveInputExt for T {}
+
+pub trait FieldsExt: BorrowMut<Fields> {
+    fn get_fields(&mut self) -> Option<&mut Punctuated<Field, Token![,]>> {
+        match self.borrow_mut() {
+            Fields::Named(fields) => Some(&mut fields.named),
+            Fields::Unnamed(fields) => Some(&mut fields.unnamed),
+            Fields::Unit => None,
+        }
+    }
+}
+
+impl<T: BorrowMut<Fields>> FieldsExt for T {}
+
+pub trait PathExt: BorrowMut<Path> {
+    fn get_ident_mut(&mut self) -> Option<&mut Ident> {
+        let path = self.borrow_mut();
+        if path.leading_colon.is_none()
+            && path.segments.len() == 1
+            && path.segments[0].arguments.is_none()
+        {
+            Some(&mut path.segments[0].ident)
+        } else {
+            None
+        }
+    }
+}
+
+impl<T: BorrowMut<Path>> PathExt for T {}

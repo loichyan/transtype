@@ -5,6 +5,7 @@ mod define;
 mod extend;
 mod pipe;
 mod rename;
+mod select;
 mod transform;
 mod wrap;
 

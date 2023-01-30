@@ -1,4 +1,11 @@
-use crate::{ast::PipeCommand, define::Define, extend::Extend, rename::Rename, wrap::Wrap};
+use crate::{
+    ast::PipeCommand,
+    define::Define,
+    extend::Extend,
+    rename::Rename,
+    select::{Select, SelectAttr},
+    wrap::Wrap,
+};
 use proc_macro2::TokenStream;
 use syn::{
     parse::{Parse, ParseStream, Parser},
@@ -29,6 +36,8 @@ impl Command for Transform {
                     Which::Define => cmd.execute::<Define>(data)?,
                     Which::Extend => cmd.execute::<Extend>(data)?,
                     Which::Rename => cmd.execute::<Rename>(data)?,
+                    Which::Select => cmd.execute::<Select>(data)?,
+                    Which::SelectAttr => cmd.execute::<SelectAttr>(data)?,
                     Which::Wrap => cmd.execute::<Wrap>(data)?,
                     Which::Undefined => {
                         break TransformOutput::Transferred {
@@ -64,19 +73,29 @@ enum Which {
     Define,
     Extend,
     Rename,
+    Select,
+    SelectAttr,
     Wrap,
     Undefined,
 }
 
+macro_rules! builtins {
+    ($($name:ident => $variant:ident;)*) => {
+        &[$((stringify!($name), Which::$variant),)*]
+    };
+}
+
+const CMDS: &[(&str, Which)] = builtins! {
+    define      => Define;
+    extend      => Extend;
+    rename      => Rename;
+    select      => Select;
+    select_attr => SelectAttr;
+    wrap        => Wrap;
+};
+
 impl Parse for TransformCmd {
     fn parse(input: ParseStream) -> Result<Self> {
-        const CMDS: &[(&str, Which)] = &[
-            ("define", Which::Define),
-            ("extend", Which::Extend),
-            ("rename", Which::Rename),
-            ("wrap", Which::Wrap),
-        ];
-
         let cmd = input.parse::<PipeCommand>()?;
         let mut which = Which::Undefined;
         if let Some(ident) = cmd.path.get_ident() {
