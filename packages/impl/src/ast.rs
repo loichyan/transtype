@@ -128,23 +128,23 @@ impl Selectors {
 
 pub struct Selector {
     pub name: WildName,
-    pub fat_arrow_token: Option<Token![=>]>,
+    pub as_token: Option<Token![as]>,
     pub rename: Option<WildName>,
 }
 
 impl Parse for Selector {
     fn parse(input: ParseStream) -> Result<Self> {
         let name = input.parse()?;
-        if input.peek(Token![=>]) {
+        if input.peek(Token![as]) {
             Ok(Self {
                 name,
-                fat_arrow_token: Some(input.parse()?),
+                as_token: Some(input.parse()?),
                 rename: Some(input.parse()?),
             })
         } else {
             Ok(Self {
                 name,
-                fat_arrow_token: None,
+                as_token: None,
                 rename: None,
             })
         }

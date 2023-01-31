@@ -14,8 +14,8 @@ struct A {
 pipe! {
     A
     -> select_attr(
-        derive1 => derive,
-        derive2 => _,
+        derive1 as derive,
+        derive2 as _,
         _,
     )
     -> select(b)
