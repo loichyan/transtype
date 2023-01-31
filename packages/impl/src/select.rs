@@ -16,7 +16,7 @@ impl Command for Select {
     ) -> Result<TransformOutput> {
         data.fields_iter()
             .for_each(|fields| args.select_fields(fields));
-        Ok(TransformOutput::Piped { data })
+        Ok(TransformOutput::Pipe { data })
     }
 }
 
@@ -34,7 +34,7 @@ impl Command for SelectAttr {
         data.fields_iter()
             .flat_map(|fields| fields.iter_mut())
             .for_each(|field| args.select_attrs(&mut field.attrs));
-        Ok(TransformOutput::Piped { data })
+        Ok(TransformOutput::Pipe { data })
     }
 }
 

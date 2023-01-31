@@ -23,7 +23,7 @@ impl Transformer for Pipe {
 
     fn transform(_: Nothing, args: Self::Args, _: &mut TokenStream) -> Result<TransformOutput> {
         let PipeArgs { path, cmds } = args;
-        Ok(TransformOutput::Transferred {
+        Ok(TransformOutput::Transferr {
             path,
             data: None,
             args: cmds,

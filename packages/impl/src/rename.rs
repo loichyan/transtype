@@ -13,6 +13,6 @@ impl Command for Rename {
         _: &mut TokenStream,
     ) -> Result<TransformOutput> {
         data.ident = name;
-        Ok(TransformOutput::Piped { data })
+        Ok(TransformOutput::Pipe { data })
     }
 }

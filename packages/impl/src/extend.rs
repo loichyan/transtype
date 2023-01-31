@@ -17,7 +17,7 @@ impl Command for Extend {
         _: &mut TokenStream,
     ) -> Result<TransformOutput> {
         Ok(match args {
-            ExtendArgs::Path(path) => TransformOutput::Transferred {
+            ExtendArgs::Path(path) => TransformOutput::Transferr {
                 path,
                 data: None,
                 args: quote!(
@@ -36,7 +36,7 @@ impl Command for Extend {
                     }
                     _ => todo!(),
                 }
-                TransformOutput::Piped { data: dest }
+                TransformOutput::Pipe { data: dest }
             }
             ExtendArgs::Struct(_) => todo!(),
         })

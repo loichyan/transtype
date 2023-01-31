@@ -1,22 +1,20 @@
 use crate::{
-    ast::{ListOf, PipeCommand},
-    debug::Debug,
-    define::Define,
+    ast::{ListOf, Nothing, PipeCommand, TokenStreamExt},
     extend::Extend,
-    finish::Finish,
     kw,
     rename::Rename,
     select::{Select, SelectAttr},
     wrap::{Wrap, Wrapped},
 };
 use proc_macro2::TokenStream;
-use quote::ToTokens;
+use quote::{format_ident, quote, ToTokens};
 use syn::{
     braced,
     parse::{Parse, ParseStream},
-    token, DeriveInput, Result, Token,
+    spanned::Spanned,
+    token, DeriveInput, Ident, Result, Token,
 };
-use transtype_lib::{NamedArg, TransformOutput, Transformer};
+use transtype_lib::{Command, NamedArg, TransformOutput, Transformer};
 
 pub type TransformInput = transtype_lib::TransformInput<Transform>;
 
@@ -36,22 +34,38 @@ impl Transformer for Transform {
         rest_tokens: &mut TokenStream,
     ) -> Result<TransformOutput> {
         // 1) Parse rest commands.
+        let mut span = args.span();
         let mut rest = if rest_tokens.is_empty() {
             TransformRest::default()
         } else {
-            syn::parse2::<TransformRest>(std::mem::take(rest_tokens))?
+            std::mem::take(rest_tokens).parse2()?
         };
         rest.extend_args(args)?;
         let output = if let Some(mut data) = data.0 {
             loop {
                 // 2) Execute pipe commands.
-                let pipes = &mut rest.pipe.content.0;
                 let output = loop {
-                    if let Some(cmd) = pipes.pop() {
+                    if let Some(cmd) = rest.pipe.content.0.pop() {
+                        span = cmd.path.span();
                         let output = match maybe_builtin(&cmd) {
-                            Some(builtin) => builtin.execute(cmd, data)?,
+                            Some(builtin) => {
+                                match builtin {
+                                    Builtin::Debug | Builtin::Save => {
+                                        *rest_tokens =
+                                            std::mem::take(&mut rest).into_token_stream();
+                                    }
+                                    _ => {}
+                                }
+                                builtin.execute(cmd, data, rest_tokens).map_err(|mut e| {
+                                    e.combine(syn::Error::new(
+                                        span,
+                                        "an error occurs in this command",
+                                    ));
+                                    e
+                                })?
+                            }
                             None => {
-                                break TransformOutput::Transferred {
+                                break TransformOutput::Transferr {
                                     path: cmd.path,
                                     data: Some(data),
                                     args: cmd.args,
@@ -59,15 +73,15 @@ impl Transformer for Transform {
                             }
                         };
                         match output {
-                            TransformOutput::Piped { data: d } => data = d,
+                            TransformOutput::Pipe { data: d } => data = d,
                             _ => break output,
                         }
                     } else {
-                        break TransformOutput::Piped { data };
+                        break TransformOutput::Pipe { data };
                     }
                 };
                 match output {
-                    TransformOutput::Transformed { data: d, args: a } => {
+                    TransformOutput::Transform { data: d, args: a } => {
                         data = d;
                         rest.extend_args(a)?;
                     }
@@ -75,28 +89,25 @@ impl Transformer for Transform {
                 }
             }
         } else {
-            TransformOutput::Consumed {
+            TransformOutput::Consume {
                 data: Default::default(),
             }
         };
         let pipes = &mut rest.pipe.content;
         let withs = &mut rest.with.content;
         Ok(match output {
-            TransformOutput::Consumed { mut data } => {
+            TransformOutput::Consume { mut data } => {
                 if !pipes.0.is_empty() {
-                    return Err(syn::Error::new_spanned(
-                        pipes,
+                    return Err(syn::Error::new(
+                        span,
                         "a consumer command should not be followed with other commands",
                     ));
                 }
                 data.extend(std::mem::take(withs));
-                TransformOutput::Consumed { data }
+                TransformOutput::Consume { data }
             }
-            TransformOutput::Piped { .. } => {
-                return Err(syn::Error::new_spanned(
-                    pipes,
-                    "a pipe command should be consumed",
-                ))
+            TransformOutput::Pipe { .. } => {
+                return Err(syn::Error::new(span, "a pipe command should be consumed"))
             }
             _ => {
                 if !withs.is_empty() || !pipes.0.is_empty() {
@@ -208,7 +219,7 @@ impl ToTokens for TransformRest {
 
 impl TransformRest {
     fn extend_args(&mut self, args: TokenStream) -> Result<()> {
-        syn::parse2::<ListOf<TransformCommand>>(args)?
+        args.parse2::<ListOf<_>>()?
             .0
             .into_iter()
             .rev()
@@ -236,9 +247,10 @@ macro_rules! builtins {
                 &self,
                 cmd: PipeCommand,
                 data: DeriveInput,
+                rest: &mut TokenStream,
             ) -> Result<TransformOutput> {
                 match self {
-                    $(Self::$variant => cmd.execute::<$variant>(data),)*
+                    $(Self::$variant => cmd.execute::<$variant>(data, rest),)*
                 }
             }
         }
@@ -250,10 +262,10 @@ builtins! {
     #[derive(Clone, Copy, Debug)]
     enum Builtin {
         debug       => Debug;
-        define      => Define;
         extend      => Extend;
         finish      => Finish;
         rename      => Rename;
+        save        => Save;
         select      => Select;
         select_attr => SelectAttr;
         wrap        => Wrap;
@@ -270,4 +282,72 @@ fn maybe_builtin(cmd: &PipeCommand) -> Option<Builtin> {
         }
     }
     None
+}
+
+pub struct Save;
+
+impl Command for Save {
+    type Args = Option<Ident>;
+
+    fn execute(
+        data: DeriveInput,
+        name: Self::Args,
+        rest: &mut TokenStream,
+    ) -> Result<TransformOutput> {
+        let name = name.unwrap_or_else(|| data.ident.clone());
+        let rest = std::mem::take(rest);
+        Ok(TransformOutput::Consume {
+            data: quote!(macro_rules! #name {
+                (
+                    data={}
+                    args=$args:tt
+                    rest={}
+                ) => {
+                    ::transtype::transform! {
+                        data={#data}
+                        args=$args
+                        rest={#rest}
+                    }
+                };
+            }),
+        })
+    }
+}
+
+pub struct Debug;
+
+impl Command for Debug {
+    type Args = TokenStream;
+
+    fn execute(
+        data: DeriveInput,
+        args: Self::Args,
+        rest: &mut TokenStream,
+    ) -> Result<TransformOutput> {
+        let rest = std::mem::take(rest);
+        let name = format_ident!("DEBUG_{}", data.ident, span = data.ident.span());
+        Ok(TransformOutput::Consume {
+            data: quote!(macro_rules! #name {
+                () => {
+                    stringify! {
+                        data={#data}
+                        args={#args}
+                        rest={#rest}
+                    }
+                };
+            }),
+        })
+    }
+}
+
+pub struct Finish;
+
+impl Command for Finish {
+    type Args = Nothing;
+
+    fn execute(data: DeriveInput, _: Self::Args, _: &mut TokenStream) -> Result<TransformOutput> {
+        Ok(TransformOutput::Consume {
+            data: data.into_token_stream(),
+        })
+    }
 }

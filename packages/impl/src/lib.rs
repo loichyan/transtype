@@ -1,10 +1,8 @@
 #[macro_use]
 mod ast;
 
-mod debug;
 mod define;
 mod extend;
-mod finish;
 mod pipe;
 mod rename;
 mod select;

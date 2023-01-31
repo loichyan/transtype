@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote, ToTokens};
+use quote::{quote, ToTokens};
 use syn::{
     braced,
     parse::{Parse, ParseStream},
@@ -60,38 +60,26 @@ impl<T: Transformer> TransformInput<T> {
         let args = self.args.content;
         let mut rest = self.rest.content;
         Ok(match T::transform(data, args, &mut rest)? {
-            TransformOutput::Piped { data } => {
+            TransformOutput::Pipe { data } => {
                 quote!(::transtype::transform! {
                     data={#data}
                     args={}
                     rest={#rest}
                 })
             }
-            TransformOutput::Consumed { data } => data,
-            TransformOutput::Transferred { path, data, args } => {
+            TransformOutput::Consume { data } => data,
+            TransformOutput::Transferr { path, data, args } => {
                 quote!(#path! {
                     data={#data}
                     args={#args}
                     rest={#rest}
                 })
             }
-            TransformOutput::Transformed { data, args } => {
+            TransformOutput::Transform { data, args } => {
                 quote!(::transtype::transform! {
                     data={#data}
                     args={#args}
                     rest={#rest}
-                })
-            }
-            TransformOutput::Debug { data, args } => {
-                let name = format_ident!("DEBUG_{}", data.ident);
-                quote!(macro_rules! #name {
-                    () => {
-                        stringify! {
-                            data={#data}
-                            args={#args}
-                            rest={#rest}
-                        }
-                    };
                 })
             }
         })
@@ -109,22 +97,18 @@ impl<T: Transformer> Parse for TransformInput<T> {
 }
 
 pub enum TransformOutput {
-    Piped {
+    Pipe {
         data: DeriveInput,
     },
-    Consumed {
+    Consume {
         data: TokenStream,
     },
-    Transferred {
+    Transferr {
         path: Path,
         data: Option<DeriveInput>,
         args: TokenStream,
     },
-    Transformed {
-        data: DeriveInput,
-        args: TokenStream,
-    },
-    Debug {
+    Transform {
         data: DeriveInput,
         args: TokenStream,
     },

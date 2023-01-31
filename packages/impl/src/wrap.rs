@@ -36,7 +36,7 @@ impl Command for Wrap {
             }
         }
 
-        Ok(TransformOutput::Piped { data })
+        Ok(TransformOutput::Pipe { data })
     }
 }
 
@@ -73,8 +73,8 @@ impl Command for Wrapped {
             _ => unreachable!(),
         }
         let name = &data.ident;
-        Ok(TransformOutput::Consumed {
-            data: quote!(
+        Ok(TransformOutput::Transform {
+            args: quote!(+ {
                 impl ::transtype::Wrapped for #name {
                     type Original = #from;
 
@@ -82,7 +82,8 @@ impl Command for Wrapped {
                         #from #body
                     }
                 }
-            ),
+            }),
+            data,
         })
     }
 }

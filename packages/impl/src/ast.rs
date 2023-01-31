@@ -79,15 +79,12 @@ pub struct PipeCommand {
 }
 
 impl PipeCommand {
-    pub fn execute<T: Command>(self, data: DeriveInput) -> Result<TransformOutput> {
-        let Self { path, args, .. } = self;
-        T::execute(data, syn::parse2(args)?, &mut TokenStream::default()).map_err(|mut e| {
-            e.combine(syn::Error::new_spanned(
-                &path,
-                "an error occurs in this command",
-            ));
-            e
-        })
+    pub fn execute<T: Command>(
+        self,
+        data: DeriveInput,
+        rest: &mut TokenStream,
+    ) -> Result<TransformOutput> {
+        T::execute(data, self.args.parse2()?, rest)
     }
 }
 
@@ -264,3 +261,11 @@ pub trait PathExt: BorrowMut<Path> {
 }
 
 impl<T: BorrowMut<Path>> PathExt for T {}
+
+pub trait TokenStreamExt: Into<TokenStream> {
+    fn parse2<T: Parse>(self) -> Result<T> {
+        syn::parse2(self.into())
+    }
+}
+
+impl<T: Into<TokenStream>> TokenStreamExt for T {}

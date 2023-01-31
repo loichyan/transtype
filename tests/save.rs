@@ -17,6 +17,11 @@ pipe! {
     A
     -> rename(WrappedA)
     -> wrap(Option)
+    -> save()
+}
+
+pipe! {
+    WrappedA
     -> wrapped(A)
     -> finish()
 }
