@@ -62,28 +62,28 @@ impl Parse for ExtendArgs {
 }
 
 pub struct ExtendInto {
-    pub at_tk: Token![@],
+    pub at_token: Token![@],
     pub data: DeriveInput,
 }
 
 impl Parse for ExtendInto {
     fn parse(input: ParseStream) -> Result<Self> {
         Ok(Self {
-            at_tk: input.parse()?,
+            at_token: input.parse()?,
             data: input.parse()?,
         })
     }
 }
 
 pub struct ExtendStruct {
-    pub struct_tk: Token![struct],
+    pub struct_token: Token![struct],
     pub fields: Fields,
 }
 
 impl Parse for ExtendStruct {
     fn parse(input: ParseStream) -> Result<Self> {
         Ok(Self {
-            struct_tk: input.parse()?,
+            struct_token: input.parse()?,
             fields: {
                 let lookahead = input.lookahead1();
                 if lookahead.peek(token::Paren) {

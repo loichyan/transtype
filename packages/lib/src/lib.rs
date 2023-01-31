@@ -117,8 +117,8 @@ pub enum TransformOutput {
 
 struct NamedArg<K, V> {
     name: K,
-    eq_tk: Token![=],
-    brace_tk: token::Brace,
+    eq_token: Token![=],
+    brace_token: token::Brace,
     content: V,
 }
 
@@ -131,8 +131,8 @@ where
         let content;
         Ok(Self {
             name: input.parse()?,
-            eq_tk: input.parse()?,
-            brace_tk: braced!(content in input),
+            eq_token: input.parse()?,
+            brace_token: braced!(content in input),
             content: content.parse()?,
         })
     }
@@ -145,8 +145,8 @@ where
 {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         self.name.to_tokens(tokens);
-        self.eq_tk.to_tokens(tokens);
-        self.brace_tk
+        self.eq_token.to_tokens(tokens);
+        self.brace_token
             .surround(tokens, |tokens| self.content.to_tokens(tokens));
     }
 }
