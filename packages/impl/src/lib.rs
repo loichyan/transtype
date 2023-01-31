@@ -19,6 +19,8 @@ mod kw {
     use syn::custom_keyword;
 
     custom_keyword!(defined);
+    custom_keyword!(pipe);
+    custom_keyword!(with);
 }
 
 #[proc_macro_attribute]

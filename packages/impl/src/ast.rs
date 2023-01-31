@@ -8,6 +8,35 @@ use syn::{
 };
 use transtype_lib::{Command, TransformOutput};
 
+pub struct ListOf<T>(pub Vec<T>);
+
+impl<T> Default for ListOf<T> {
+    fn default() -> Self {
+        Self(Vec::default())
+    }
+}
+
+impl<T: Parse> Parse for ListOf<T> {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let mut inner = Vec::default();
+        loop {
+            if input.is_empty() {
+                break;
+            }
+            inner.push(input.parse()?);
+        }
+        Ok(Self(inner))
+    }
+}
+
+impl<T: ToTokens> ToTokens for ListOf<T> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        for t in &self.0 {
+            t.to_tokens(tokens);
+        }
+    }
+}
+
 pub struct Nothing(SynNothing);
 
 impl Default for Nothing {
@@ -71,6 +100,15 @@ impl Parse for PipeCommand {
             delimiter: delimited!(content in input),
             args: content.parse()?,
         })
+    }
+}
+
+impl ToTokens for PipeCommand {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.r_arrow_token.to_tokens(tokens);
+        self.path.to_tokens(tokens);
+        self.delimiter
+            .surround(tokens, |tokens| self.args.to_tokens(tokens));
     }
 }
 

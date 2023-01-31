@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
+use quote::{format_ident, quote, ToTokens};
 use syn::{
     braced,
     parse::{Parse, ParseStream},
@@ -61,27 +61,13 @@ impl<T: Transformer> TransformInput<T> {
         let mut rest = self.rest.content;
         Ok(match T::transform(data, args, &mut rest)? {
             TransformOutput::Piped { data } => {
-                if rest.is_empty() {
-                    return Err(syn::Error::new_spanned(
-                        rest,
-                        "a pipe command should be consumed",
-                    ));
-                }
                 quote!(::transtype::transform! {
                     data={#data}
                     args={}
                     rest={#rest}
                 })
             }
-            TransformOutput::Consumed { data } => {
-                if !rest.is_empty() {
-                    return Err(syn::Error::new_spanned(
-                        rest,
-                        "a consumer command should not be followed with other commands",
-                    ));
-                }
-                data.into_token_stream()
-            }
+            TransformOutput::Consumed { data } => data,
             TransformOutput::Transferred { path, data, args } => {
                 quote!(#path! {
                     data={#data}
@@ -94,6 +80,18 @@ impl<T: Transformer> TransformInput<T> {
                     data={#data}
                     args={#args}
                     rest={#rest}
+                })
+            }
+            TransformOutput::Debug { data, args } => {
+                let name = format_ident!("DEBUG_{}", data.ident);
+                quote!(macro_rules! #name {
+                    () => {
+                        stringify! {
+                            data={#data}
+                            args={#args}
+                            rest={#rest}
+                        }
+                    };
                 })
             }
         })
@@ -126,13 +124,17 @@ pub enum TransformOutput {
         data: DeriveInput,
         args: TokenStream,
     },
+    Debug {
+        data: DeriveInput,
+        args: TokenStream,
+    },
 }
 
-struct NamedArg<K, V> {
-    name: K,
-    eq_token: Token![=],
-    brace_token: token::Brace,
-    content: V,
+pub struct NamedArg<K, V> {
+    pub name: K,
+    pub eq_token: Token![=],
+    pub brace_token: token::Brace,
+    pub content: V,
 }
 
 impl<K, V> Parse for NamedArg<K, V>
