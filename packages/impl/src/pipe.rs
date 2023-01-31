@@ -22,25 +22,25 @@ impl Transformer for Pipe {
     type Args = PipeArgs;
 
     fn transform(_: Nothing, args: Self::Args, _: &mut TokenStream) -> Result<TransformOutput> {
-        let PipeArgs { path, pipes } = args;
+        let PipeArgs { path, cmds } = args;
         Ok(TransformOutput::Transferred {
             path,
             data: None,
-            args: pipes,
+            args: cmds,
         })
     }
 }
 
 struct PipeArgs {
     path: Path,
-    pipes: TokenStream,
+    cmds: TokenStream,
 }
 
 impl Parse for PipeArgs {
     fn parse(input: ParseStream) -> Result<Self> {
         Ok(Self {
             path: input.parse()?,
-            pipes: input.parse()?,
+            cmds: input.parse()?,
         })
     }
 }

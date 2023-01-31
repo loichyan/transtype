@@ -1,6 +1,7 @@
 #[macro_use]
 mod ast;
 
+mod debug;
 mod define;
 mod extend;
 mod finish;

@@ -82,11 +82,20 @@ impl<T: Transformer> TransformInput<T> {
                 }
                 data.into_token_stream()
             }
-            TransformOutput::Transferred { path, data, args } => quote!(#path! {
-                data={#data}
-                args={#args}
-                rest={#rest}
-            }),
+            TransformOutput::Transferred { path, data, args } => {
+                quote!(#path! {
+                    data={#data}
+                    args={#args}
+                    rest={#rest}
+                })
+            }
+            TransformOutput::Transformed { data, args } => {
+                quote!(::transtype::transform! {
+                    data={#data}
+                    args={#args}
+                    rest={#rest}
+                })
+            }
         })
     }
 }
@@ -111,6 +120,10 @@ pub enum TransformOutput {
     Transferred {
         path: Path,
         data: Option<DeriveInput>,
+        args: TokenStream,
+    },
+    Transformed {
+        data: DeriveInput,
         args: TokenStream,
     },
 }
