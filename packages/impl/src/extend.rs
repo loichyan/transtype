@@ -21,10 +21,10 @@ impl Command for Extend {
                 path,
                 data: None,
                 args: quote!(
-                    -> extend(@#data)
+                    -> extend(as #data)
                 ),
             },
-            ExtendArgs::Into(ExtendInto { data: mut dest, .. }) => {
+            ExtendArgs::As(ExtendAs { data: mut dest, .. }) => {
                 match (&mut dest.data, data.data) {
                     (Data::Struct(dest), Data::Struct(src)) => {
                         match (&mut dest.fields, src.fields) {
@@ -45,7 +45,7 @@ impl Command for Extend {
 
 pub enum ExtendArgs {
     Path(Path),
-    Into(ExtendInto),
+    As(ExtendAs),
     Struct(ExtendStruct),
 }
 
@@ -53,23 +53,23 @@ impl Parse for ExtendArgs {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek(Token![struct]) {
             input.parse().map(Self::Struct)
-        } else if input.peek(Token![@]) {
-            input.parse().map(Self::Into)
+        } else if input.peek(Token![as]) {
+            input.parse().map(Self::As)
         } else {
             input.parse().map(Self::Path)
         }
     }
 }
 
-pub struct ExtendInto {
-    pub at_token: Token![@],
+pub struct ExtendAs {
+    pub as_token: Token![as],
     pub data: DeriveInput,
 }
 
-impl Parse for ExtendInto {
+impl Parse for ExtendAs {
     fn parse(input: ParseStream) -> Result<Self> {
         Ok(Self {
-            at_token: input.parse()?,
+            as_token: input.parse()?,
             data: input.parse()?,
         })
     }
