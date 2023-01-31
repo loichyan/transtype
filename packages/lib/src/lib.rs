@@ -62,14 +62,16 @@ impl<T: Transformer> TransformInput<T> {
         Ok(match T::transform(data, args, &mut rest)? {
             TransformOutput::Piped { data } => {
                 if rest.is_empty() {
-                    data.into_token_stream()
-                } else {
-                    quote!(::transtype::transform! {
-                        data={#data}
-                        args={}
-                        rest={#rest}
-                    })
+                    return Err(syn::Error::new_spanned(
+                        rest,
+                        "a pipe command should be consumed",
+                    ));
                 }
+                quote!(::transtype::transform! {
+                    data={#data}
+                    args={}
+                    rest={#rest}
+                })
             }
             TransformOutput::Consumed { data } => {
                 if !rest.is_empty() {

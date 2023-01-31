@@ -19,4 +19,5 @@ pipe! {
         _,
     )
     -> select(b)
+    -> finish()
 }

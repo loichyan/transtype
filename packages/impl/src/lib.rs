@@ -3,6 +3,7 @@ mod ast;
 
 mod define;
 mod extend;
+mod finish;
 mod pipe;
 mod rename;
 mod select;
@@ -16,7 +17,7 @@ use transform::TransformInput;
 mod kw {
     use syn::custom_keyword;
 
-    custom_keyword!(from);
+    custom_keyword!(defined);
 }
 
 #[proc_macro_attribute]

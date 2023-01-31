@@ -10,10 +10,17 @@ struct A {
 
 pipe! {
     A
+    -> finish()
 }
 
 pipe! {
     A
     -> rename(WrappedA)
-    -> wrap(Option from A)
+    -> wrap(Option)
+    -> finish(defined)
+}
+
+pipe! {
+    WrappedA
+    -> wrapped(A)
 }

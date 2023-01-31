@@ -2,9 +2,10 @@ use crate::{
     ast::PipeCommand,
     define::Define,
     extend::Extend,
+    finish::Finish,
     rename::Rename,
     select::{Select, SelectAttr},
-    wrap::Wrap,
+    wrap::{Wrap, Wrapped},
 };
 use proc_macro2::TokenStream;
 use syn::{
@@ -31,21 +32,15 @@ impl Command for Transform {
                 if input.is_empty() {
                     break TransformOutput::Piped { data };
                 }
-                let TransformCmd { which, cmd } = input.parse::<TransformCmd>()?;
-                let output = match which {
-                    Which::Define => cmd.execute::<Define>(data)?,
-                    Which::Extend => cmd.execute::<Extend>(data)?,
-                    Which::Rename => cmd.execute::<Rename>(data)?,
-                    Which::Select => cmd.execute::<Select>(data)?,
-                    Which::SelectAttr => cmd.execute::<SelectAttr>(data)?,
-                    Which::Wrap => cmd.execute::<Wrap>(data)?,
-                    Which::Undefined => {
-                        break TransformOutput::Transferred {
-                            path: cmd.path,
-                            data: Some(data),
-                            args: cmd.args,
-                        }
-                    }
+                let TransformCmd { builtin, cmd } = input.parse::<TransformCmd>()?;
+                let output = if let Some(builtin) = builtin {
+                    builtin.execute(cmd, data)?
+                } else {
+                    break TransformOutput::Transferred {
+                        path: cmd.path,
+                        data: Some(data),
+                        args: cmd.args,
+                    };
                 };
                 match output {
                     TransformOutput::Piped { data: d } => data = d,
@@ -64,47 +59,61 @@ pub fn expand(input: TransformInput) -> Result<TokenStream> {
 }
 
 struct TransformCmd {
-    which: Which,
+    builtin: Option<Builtin>,
     cmd: PipeCommand,
 }
 
-#[derive(Clone, Copy)]
-enum Which {
-    Define,
-    Extend,
-    Rename,
-    Select,
-    SelectAttr,
-    Wrap,
-    Undefined,
-}
-
 macro_rules! builtins {
-    ($($name:ident => $variant:ident;)*) => {
-        &[$((stringify!($name), Which::$variant),)*]
+    (
+        $(#[$attr:meta])* enum $name:ident
+        { $($key:ident => $variant:ident;)* }
+    ) => {
+        $(#[$attr])*
+        enum $name { $($variant,)* }
+
+        impl $name {
+            const ALL: &'static [(&'static str, $name)] =
+                &[$((stringify!($key), $name::$variant),)*];
+
+            pub fn execute(
+                &self,
+                cmd: PipeCommand,
+                data: DeriveInput,
+            ) -> Result<TransformOutput> {
+                match self {
+                    $(Self::$variant => cmd.execute::<$variant>(data),)*
+                }
+            }
+        }
+
     };
 }
 
-const CMDS: &[(&str, Which)] = builtins! {
-    define      => Define;
-    extend      => Extend;
-    rename      => Rename;
-    select      => Select;
-    select_attr => SelectAttr;
-    wrap        => Wrap;
-};
+builtins! {
+    #[derive(Clone, Copy, Debug)]
+    enum Builtin {
+        define      => Define;
+        extend      => Extend;
+        finish      => Finish;
+        rename      => Rename;
+        select      => Select;
+        select_attr => SelectAttr;
+        wrap        => Wrap;
+        wrapped     => Wrapped;
+    }
+}
 
 impl Parse for TransformCmd {
     fn parse(input: ParseStream) -> Result<Self> {
         let cmd = input.parse::<PipeCommand>()?;
-        let mut which = Which::Undefined;
+        let mut builtin = None;
         if let Some(ident) = cmd.path.get_ident() {
-            if let Ok(i) =
-                CMDS.binary_search_by_key::<&str, _>(&ident.to_string().as_str(), |(s, _)| s)
+            if let Ok(i) = Builtin::ALL
+                .binary_search_by_key::<&str, _>(&ident.to_string().as_str(), |(s, _)| s)
             {
-                which = CMDS[i].1;
+                builtin = Some(Builtin::ALL[i].1);
             }
         }
-        Ok(Self { which, cmd })
+        Ok(Self { builtin, cmd })
     }
 }
