@@ -115,14 +115,13 @@ impl Transformer for Debug {
     ) -> Result<TransformState> {
         let plus = rest.take_plus();
         let name = format_ident!("DEBUG_{}", data.ident, span = data.ident.span());
+        let data = quote!(
+            data={#data}
+            args={#args}
+            plus={#plus}
+        ).to_string();
         Ok(TransformState::consume(quote!(macro_rules! #name {
-            () => {
-                stringify! {
-                    data={#data}
-                    args={#args}
-                    plus={#plus}
-                }
-            };
+            () => {{ #data }};
         })))
     }
 }
