@@ -6,9 +6,9 @@ mod predefined;
 mod transform;
 
 use builtin::DefaultExecutor;
-use proc_macro2::{Span, TokenStream};
-use quote::quote;
-use syn::{parse::Parse, spanned::Spanned, DeriveInput, Path, Result};
+use proc_macro2::TokenStream;
+use quote::quote_spanned;
+use syn::{parse::Parse, DeriveInput, Path, Result};
 
 pub use ast::{ListOf, NamedArg, Optional, PipeCommand, TransformInput, TransformRest};
 
@@ -139,13 +139,12 @@ impl TransformState {
         mut rest: TransformRest,
     ) -> Result<TokenStream> {
         let mut state = self;
-        let mut span = Span::call_site();
         Ok(loop {
             let data = match state {
                 TransformState::Consume { data } => {
                     if !rest.is_empty() {
                         return Err(syn::Error::new(
-                            span,
+                            rest.span(),
                             "a consume command should not be followed by other commands",
                         ));
                     }
@@ -169,15 +168,27 @@ impl TransformState {
                     if let Some(plus) = plus {
                         rest.prepend_plus(plus);
                     }
-                    break quote!(#path! {
-                        rest={#rest}
-                    });
+                    rest.set_this(path.clone());
+                    let span = rest.span();
+                    break quote_spanned!(span=>
+                        #path! { rest={#rest} }
+                    );
                 }
             };
             match rest.next_pipe() {
                 Some(cmd) => {
-                    span = cmd.path().span();
-                    match T::execute(cmd, data, &mut rest)? {
+                    rest.set_this(cmd.path().clone());
+                    let output = match T::execute(cmd, data, &mut rest) {
+                        Ok(t) => t,
+                        Err(mut e) => {
+                            e.combine(syn::Error::new(
+                                rest.span(),
+                                "an error occurs in this command",
+                            ));
+                            return Err(e);
+                        }
+                    };
+                    match output {
                         ExecuteOutput::Executed { state: s } => {
                             state = s;
                         }
@@ -187,7 +198,10 @@ impl TransformState {
                     }
                 }
                 None => {
-                    return Err(syn::Error::new(span, "a pipe command should be consumed"));
+                    return Err(syn::Error::new(
+                        rest.span(),
+                        "a pipe command should be consumed",
+                    ));
                 }
             }
         })

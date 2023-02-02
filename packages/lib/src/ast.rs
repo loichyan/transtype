@@ -1,6 +1,6 @@
 use crate::{kw, DefaultExecutor, Executor, TransformState, Transformer};
-use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
+use proc_macro2::{Span, TokenStream};
+use quote::{quote_spanned, ToTokens};
 use std::ops::{Deref, DerefMut};
 use syn::{
     braced, parenthesized,
@@ -43,6 +43,15 @@ pub struct TransformRest {
 }
 
 impl TransformRest {
+    /// Get this span of current command.
+    pub fn span(&self) -> Span {
+        let path = &self.this.content;
+        path.segments
+            .last()
+            .map(|t| t.ident.span())
+            .unwrap_or_else(|| path.span())
+    }
+
     pub(crate) fn empty(path: Path) -> Self {
         Self {
             this: NamedArg::new(path),
@@ -53,6 +62,10 @@ impl TransformRest {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.pipe.content.is_empty()
+    }
+
+    pub(crate) fn set_this(&mut self, this: Path) {
+        self.this.content = this;
     }
 
     pub(crate) fn next_pipe(&mut self) -> Option<PipeCommand> {
@@ -118,20 +131,19 @@ impl PipeCommand {
         data: DeriveInput,
         rest: &mut TransformRest,
     ) -> Result<TransformState> {
-        let span = self.path.span();
-        (|| T::transform(data, syn::parse2(self.args)?, rest))().map_err(|mut e| {
-            e.combine(syn::Error::new(span, "an error occurs in this command"));
-            e
-        })
+        T::transform(data, syn::parse2(self.args)?, rest)
     }
 
     pub(crate) fn execute(self, data: DeriveInput, rest: TransformRest) -> TokenStream {
+        let span = rest.span();
         let PipeCommand { path, args, .. } = self;
-        quote!(#path! {
-            data={#data}
-            args={#args}
-            rest={#rest}
-        })
+        quote_spanned!(span=>
+            #path! {
+                data={#data}
+                args={#args}
+                rest={#rest}
+            }
+        )
     }
 }
 

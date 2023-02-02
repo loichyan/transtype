@@ -140,7 +140,7 @@ impl Parse for TransformConsume {
         let name = input.parse::<kw::consume>()?;
         let span = name.span();
         parse_optional!(input => data, rest);
-        assert_some!(span => rest);
+        assert_some!(span=> rest);
         Ok(Self { name, data, rest })
     }
 }
@@ -158,7 +158,7 @@ impl Parse for TransformPipe {
         let name = input.parse::<kw::pipe>()?;
         let span = name.span();
         parse_optional!(input => data, pipe, plus, rest);
-        assert_some!(span => data, rest);
+        assert_some!(span=> data, rest);
         Ok(Self {
             name,
             data,
@@ -182,7 +182,7 @@ impl Parse for TransformStart {
         let name = input.parse::<kw::start>()?;
         let span = name.span();
         parse_optional!(input => path, pipe, plus, rest);
-        assert_some!(span => path, rest);
+        assert_some!(span=> path, rest);
         Ok(Self {
             name,
             path,

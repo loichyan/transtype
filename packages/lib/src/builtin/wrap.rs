@@ -1,7 +1,7 @@
 use super::ast::Delimiter;
 use crate::{TransformRest, TransformState, Transformer};
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::quote_spanned;
 use syn::{parse_quote, Data, DeriveInput, Ident, Member, Result, Type};
 
 pub struct Wrap;
@@ -48,8 +48,9 @@ impl Transformer for Wrapped {
     fn transform(
         data: DeriveInput,
         from: Self::Args,
-        _: &mut TransformRest,
+        rest: &mut TransformRest,
     ) -> Result<TransformState> {
+        let span = rest.span();
         let mut body = TokenStream::default();
         match &data.data {
             Data::Struct(data) => {
@@ -60,11 +61,11 @@ impl Transformer for Wrapped {
                                 .ident
                                 .as_ref()
                                 .map(
-                                    |name| quote!(#name: ::transtype::Wrapper::unwrap(self.#name),),
+                                    |name| quote_spanned!(span=> #name: ::transtype::Wrapper::unwrap(self.#name),),
                                 )
                                 .unwrap_or_else(|| {
                                     let i = Member::Unnamed(i.into());
-                                    quote!(::transtype::Wrapper::unwrap(self.#i),)
+                                    quote_spanned!(span=> ::transtype::Wrapper::unwrap(self.#i),)
                                 }),
                         )
                     });
@@ -75,7 +76,7 @@ impl Transformer for Wrapped {
         let name = &data.ident;
         Ok(TransformState::Pipe {
             pipe: None,
-            plus: Some(quote!(
+            plus: Some(quote_spanned!(span=>
                 impl ::transtype::Wrapped for #name {
                     type Original = #from;
 

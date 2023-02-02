@@ -9,7 +9,7 @@ use crate::{
 };
 use ast::Nothing;
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote, ToTokens};
+use quote::{format_ident, quote_spanned, ToTokens};
 use syn::{DeriveInput, Ident, Result};
 
 #[doc(inline)]
@@ -113,16 +113,18 @@ impl Transformer for Debug {
         args: Self::Args,
         rest: &mut TransformRest,
     ) -> Result<TransformState> {
+        let span = rest.span();
         let plus = rest.take_plus();
         let name = format_ident!("DEBUG_{}", data.ident, span = data.ident.span());
-        let data = quote!(
+        let data = quote_spanned!(span=>
             data={#data}
             args={#args}
             plus={#plus}
-        ).to_string();
-        Ok(TransformState::consume(quote!(macro_rules! #name {
-            () => {{ #data }};
-        })))
+        )
+        .to_string();
+        Ok(TransformState::consume(quote_spanned!(span=>
+            macro_rules! #name { () => {{ #data }}; }
+        )))
     }
 }
 
@@ -151,17 +153,20 @@ impl Transformer for Save {
         name: Self::Args,
         rest: &mut TransformRest,
     ) -> Result<TransformState> {
+        let span = rest.span();
         let name = name.unwrap_or_else(|| data.ident.clone());
         let plus = rest.take_plus();
-        Ok(TransformState::consume(quote!(macro_rules! #name {
-            ($($args:tt)*) => {
-                ::transtype::__predefined! {
-                    args={$($args)*}
-                    data={#data}
-                    plus={#plus}
-                }
-            };
-        })))
+        Ok(TransformState::consume(quote_spanned!(span=>
+            macro_rules! #name {
+                ($($args:tt)*) => {
+                    ::transtype::__predefined! {
+                        args={$($args)*}
+                        data={#data}
+                        plus={#plus}
+                    }
+                };
+            }
+        )))
     }
 }
 
