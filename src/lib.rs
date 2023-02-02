@@ -5,7 +5,7 @@ pub use transtype_impl::*;
 pub mod private {
     use crate::Wrapper;
 
-    pub struct InnerType;
+    pub enum InnerType {}
 
     pub const fn requires_wrapper<T: Wrapper<InnerType>>() {}
 }
