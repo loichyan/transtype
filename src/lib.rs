@@ -1,4 +1,5 @@
-pub use transtype_impl::{define, pipe, transform};
+#[doc(inline)]
+pub use transtype_impl::*;
 
 #[doc(hidden)]
 pub mod private {

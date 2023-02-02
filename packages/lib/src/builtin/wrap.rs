@@ -1,19 +1,19 @@
-use crate::ast::Delimiter;
+use super::ast::Delimiter;
+use crate::{TransformRest, TransformState, Transformer};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{parse_quote, Data, DeriveInput, Ident, Member, Result, Type};
-use transtype_lib::{Command, TransformOutput};
 
 pub struct Wrap;
 
-impl Command for Wrap {
+impl Transformer for Wrap {
     type Args = Ident;
 
-    fn execute(
+    fn transform(
         mut data: DeriveInput,
         name: Self::Args,
-        _: &mut TokenStream,
-    ) -> Result<TransformOutput> {
+        _: &mut TransformRest,
+    ) -> Result<TransformState> {
         match &mut data.data {
             Data::Struct(data) => {
                 for field in data.fields.iter_mut() {
@@ -36,20 +36,20 @@ impl Command for Wrap {
             }
         }
 
-        Ok(TransformOutput::Pipe { data })
+        Ok(TransformState::pipe(data))
     }
 }
 
 pub struct Wrapped;
 
-impl Command for Wrapped {
+impl Transformer for Wrapped {
     type Args = Type;
 
-    fn execute(
+    fn transform(
         data: DeriveInput,
         from: Self::Args,
-        _: &mut TokenStream,
-    ) -> Result<TransformOutput> {
+        _: &mut TransformRest,
+    ) -> Result<TransformState> {
         let mut body = TokenStream::default();
         match &data.data {
             Data::Struct(data) => {
@@ -73,8 +73,9 @@ impl Command for Wrapped {
             _ => unreachable!(),
         }
         let name = &data.ident;
-        Ok(TransformOutput::Transform {
-            args: quote!(+ {
+        Ok(TransformState::Pipe {
+            pipe: None,
+            plus: Some(quote!(
                 impl ::transtype::Wrapped for #name {
                     type Original = #from;
 
@@ -82,7 +83,7 @@ impl Command for Wrapped {
                         #from #body
                     }
                 }
-            }),
+            )),
             data,
         })
     }

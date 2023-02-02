@@ -1,14 +1,10 @@
-#[macro_use]
-mod ast;
-
 mod define;
-mod extend;
 mod pipe;
-mod rename;
-mod select;
+mod predefined;
 mod transform;
-mod wrap;
 
+use pipe::PipeInput;
+use predefined::PredefinedInput;
 use proc_macro::TokenStream;
 use syn::{parse::Nothing, parse_macro_input, DeriveInput};
 use transform::TransformInput;
@@ -16,9 +12,15 @@ use transform::TransformInput;
 mod kw {
     use syn::custom_keyword;
 
-    custom_keyword!(defined);
+    custom_keyword!(args);
+    custom_keyword!(consume);
+    custom_keyword!(data);
     custom_keyword!(pipe);
-    custom_keyword!(with);
+    custom_keyword!(rest);
+    custom_keyword!(save);
+    custom_keyword!(start);
+    custom_keyword!(path);
+    custom_keyword!(plus);
 }
 
 #[proc_macro_attribute]
@@ -32,7 +34,7 @@ pub fn define(attr: TokenStream, input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 pub fn pipe(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as proc_macro2::TokenStream);
+    let input = parse_macro_input!(input as PipeInput);
     pipe::expand(input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
@@ -45,3 +47,13 @@ pub fn transform(input: TokenStream) -> TokenStream {
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
+
+#[proc_macro]
+pub fn predefined(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as PredefinedInput);
+    predefined::expand(input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+transtype_lib::define_builtins!();

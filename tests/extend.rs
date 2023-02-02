@@ -17,7 +17,5 @@ struct B {
 pipe! {
     A
     -> extend(B)
-    // -> finish()
-    -> debug()
-    -> extend(B)
+    -> finish()
 }

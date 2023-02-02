@@ -6,36 +6,6 @@ use syn::{
     punctuated::Punctuated,
     token, Data, DeriveInput, Field, Fields, Ident, Path, Result, Token,
 };
-use transtype_lib::{Command, TransformOutput};
-
-pub struct ListOf<T>(pub Vec<T>);
-
-impl<T> Default for ListOf<T> {
-    fn default() -> Self {
-        Self(Vec::default())
-    }
-}
-
-impl<T: Parse> Parse for ListOf<T> {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let mut inner = Vec::default();
-        loop {
-            if input.is_empty() {
-                break;
-            }
-            inner.push(input.parse()?);
-        }
-        Ok(Self(inner))
-    }
-}
-
-impl<T: ToTokens> ToTokens for ListOf<T> {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        for t in &self.0 {
-            t.to_tokens(tokens);
-        }
-    }
-}
 
 pub struct Nothing(SynNothing);
 
@@ -55,61 +25,8 @@ impl ToTokens for Nothing {
     fn to_tokens(&self, _: &mut TokenStream) {}
 }
 
-macro_rules! delimited {
-    ($content:ident in $cursor:expr) => {{
-        let input = $cursor;
-        let lookahead = input.lookahead1();
-        if lookahead.peek(token::Brace) {
-            $crate::ast::Delimiter::Brace(::syn::braced!($content in input))
-        } else if lookahead.peek(token::Bracket) {
-            $crate::ast::Delimiter::Bracket(::syn::bracketed!($content in input))
-        } else if lookahead.peek(token::Paren) {
-            $crate::ast::Delimiter::Paren(::syn::parenthesized!($content in input))
-        } else {
-            return Err(lookahead.error());
-        }
-    }};
-}
-
-pub struct PipeCommand {
-    pub r_arrow_token: Token![->],
-    pub path: Path,
-    pub delimiter: Delimiter,
-    pub args: TokenStream,
-}
-
-impl PipeCommand {
-    pub fn execute<T: Command>(
-        self,
-        data: DeriveInput,
-        rest: &mut TokenStream,
-    ) -> Result<TransformOutput> {
-        T::execute(data, self.args.parse2()?, rest)
-    }
-}
-
-impl Parse for PipeCommand {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let content;
-        Ok(Self {
-            r_arrow_token: input.parse()?,
-            path: input.parse()?,
-            delimiter: delimited!(content in input),
-            args: content.parse()?,
-        })
-    }
-}
-
-impl ToTokens for PipeCommand {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        self.r_arrow_token.to_tokens(tokens);
-        self.path.to_tokens(tokens);
-        self.delimiter
-            .surround(tokens, |tokens| self.args.to_tokens(tokens));
-    }
-}
-
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 pub enum Delimiter {
     Brace(token::Brace),
     Bracket(token::Bracket),

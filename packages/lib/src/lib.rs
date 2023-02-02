@@ -1,151 +1,184 @@
-use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
-use syn::{
-    braced,
-    parse::{Parse, ParseStream},
-    token, DeriveInput, Path, Result, Token,
+#[macro_use]
+mod builtin;
+mod ast;
+
+use builtin::DefaultExecutor;
+use proc_macro2::{Span, TokenStream};
+use quote::quote;
+use syn::{parse::Parse, spanned::Spanned, DeriveInput, Path, Result};
+
+pub use ast::{
+    ListOf, NamedArg, Optional, PipeCommand, PredefinedInput, TransformInput, TransformRest,
 };
 
 mod kw {
     use syn::custom_keyword;
 
-    custom_keyword!(data);
     custom_keyword!(args);
+    custom_keyword!(data);
+    custom_keyword!(pipe);
     custom_keyword!(rest);
+    custom_keyword!(plus);
 }
 
-pub trait Command {
-    type Args: Parse;
+#[doc(hidden)]
+pub mod private {
+    use crate::{TransformInput, Transformer};
+    use proc_macro2::TokenStream;
 
-    fn execute(
-        data: DeriveInput,
-        args: Self::Args,
-        rest: &mut TokenStream,
-    ) -> Result<TransformOutput>;
-}
+    #[doc(inline)]
+    pub use crate::builtin::commands;
 
-impl<T: Command> Transformer for T {
-    type Data = DeriveInput;
-    type Args = <T as Command>::Args;
-
-    fn transform(
-        data: Self::Data,
-        args: Self::Args,
-        rest: &mut TokenStream,
-    ) -> Result<TransformOutput> {
-        T::execute(data, args, rest)
+    pub fn expand_builtin<T: Transformer, I: From<TokenStream> + Into<TokenStream>>(input: I) -> I {
+        (|| syn::parse2::<TransformInput<T>>(input.into())?.transform())()
+            .unwrap_or_else(syn::Error::into_compile_error)
+            .into()
     }
 }
 
 pub trait Transformer: Sized {
-    type Data: Parse;
     type Args: Parse;
 
     fn transform(
-        data: Self::Data,
+        data: DeriveInput,
         args: Self::Args,
-        rest: &mut TokenStream,
-    ) -> Result<TransformOutput>;
+        rest: &mut TransformRest,
+    ) -> Result<TransformState>;
 }
 
-pub struct TransformInput<T: Transformer> {
-    data: NamedArg<kw::data, T::Data>,
-    args: NamedArg<kw::args, T::Args>,
-    rest: NamedArg<kw::rest, TokenStream>,
+pub trait Executor: Sized {
+    fn execute(
+        cmd: PipeCommand,
+        data: DeriveInput,
+        rest: &mut TransformRest,
+    ) -> Result<ExecuteOutput>;
 }
 
-impl<T: Transformer> TransformInput<T> {
-    pub fn transform(self) -> Result<TokenStream> {
-        let data = self.data.content;
-        let args = self.args.content;
-        let mut rest = self.rest.content;
-        Ok(match T::transform(data, args, &mut rest)? {
-            TransformOutput::Pipe { data } => {
-                quote!(::transtype::transform! {
-                    data={#data}
-                    args={}
-                    rest={#rest}
-                })
-            }
-            TransformOutput::Consume { data } => data,
-            TransformOutput::Transferr { path, data, args } => {
-                quote!(#path! {
-                    data={#data}
-                    args={#args}
-                    rest={#rest}
-                })
-            }
-            TransformOutput::Transform { data, args } => {
-                quote!(::transtype::transform! {
-                    data={#data}
-                    args={#args}
-                    rest={#rest}
-                })
-            }
-        })
-    }
-}
-
-impl<T: Transformer> Parse for TransformInput<T> {
-    fn parse(input: ParseStream) -> Result<Self> {
-        Ok(Self {
-            data: input.parse()?,
-            args: input.parse()?,
-            rest: input.parse()?,
-        })
-    }
-}
-
-pub enum TransformOutput {
+pub enum TransformState {
+    /// ```
+    /// transform! {
+    ///     @consume
+    ///     data={#data}
+    ///     rest={#rest}
+    /// }
+    /// ```
+    Consume { data: Option<TokenStream> },
+    /// ```
+    /// transform! {
+    ///     @pipe
+    ///     data={#data}
+    ///     pipe={#pipe}
+    ///     plus={#plus}
+    ///     rest={#rest}
+    /// }
+    /// ```
     Pipe {
         data: DeriveInput,
+        pipe: Option<ListOf<PipeCommand>>,
+        plus: Option<TokenStream>,
     },
-    Consume {
-        data: TokenStream,
-    },
-    Transferr {
+    /// ```
+    /// transform! {
+    ///     @start
+    ///     path={#path}
+    ///     pipe={#pipe}
+    ///     plus={#plus}
+    ///     rest={#rest}
+    /// }
+    /// ```
+    Start {
         path: Path,
-        data: Option<DeriveInput>,
-        args: TokenStream,
-    },
-    Transform {
-        data: DeriveInput,
-        args: TokenStream,
+        pipe: Option<ListOf<PipeCommand>>,
+        plus: Option<TokenStream>,
     },
 }
 
-pub struct NamedArg<K, V> {
-    pub name: K,
-    pub eq_token: Token![=],
-    pub brace_token: token::Brace,
-    pub content: V,
-}
+impl TransformState {
+    pub fn consume(data: TokenStream) -> Self {
+        Self::Consume { data: Some(data) }
+    }
 
-impl<K, V> Parse for NamedArg<K, V>
-where
-    K: Parse,
-    V: Parse,
-{
-    fn parse(input: ParseStream) -> Result<Self> {
-        let content;
-        Ok(Self {
-            name: input.parse()?,
-            eq_token: input.parse()?,
-            brace_token: braced!(content in input),
-            content: content.parse()?,
+    pub fn pipe(data: DeriveInput) -> Self {
+        Self::Pipe {
+            data,
+            pipe: None,
+            plus: None,
+        }
+    }
+
+    pub fn start(path: Path) -> Self {
+        Self::Start {
+            path,
+            pipe: None,
+            plus: None,
+        }
+    }
+
+    pub fn transform(self, rest: TransformRest) -> Result<TokenStream> {
+        self.transform_with::<DefaultExecutor>(rest)
+    }
+
+    pub fn transform_with<T: Executor>(self, mut rest: TransformRest) -> Result<TokenStream> {
+        let mut state = self;
+        let mut span = Span::call_site();
+        Ok(loop {
+            let data = match state {
+                TransformState::Consume { data } => {
+                    if !rest.is_empty() {
+                        return Err(syn::Error::new(span, "all rest pipes should be consumed"));
+                    }
+                    let mut data = data.unwrap_or_default();
+                    data.extend(rest.take_plus());
+                    break data;
+                }
+                TransformState::Pipe { data, pipe, plus } => {
+                    if let Some(pipe) = pipe {
+                        rest.prepend_pipe(pipe);
+                    }
+                    if let Some(plus) = plus {
+                        rest.prepend_plus(plus);
+                    }
+                    data
+                }
+                TransformState::Start { path, pipe, plus } => {
+                    if let Some(pipe) = pipe {
+                        rest.prepend_pipe(pipe);
+                    }
+                    if let Some(plus) = plus {
+                        rest.prepend_plus(plus);
+                    }
+                    break quote!(#path! {
+                        rest={#rest}
+                    });
+                }
+            };
+            match rest.next_pipe() {
+                Some(cmd) => {
+                    span = cmd.span();
+                    match T::execute(cmd, data, &mut rest)? {
+                        ExecuteOutput::Executed { state: s } => {
+                            state = s;
+                        }
+                        ExecuteOutput::Unsupported { cmd, data } => {
+                            break cmd.execute(data, rest);
+                        }
+                    }
+                }
+                None => {
+                    return Err(syn::Error::new(span, "all piped tokens should be consumed"));
+                }
+            }
         })
     }
 }
 
-impl<K, V> ToTokens for NamedArg<K, V>
-where
-    K: ToTokens,
-    V: ToTokens,
-{
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        self.name.to_tokens(tokens);
-        self.eq_token.to_tokens(tokens);
-        self.brace_token
-            .surround(tokens, |tokens| self.content.to_tokens(tokens));
+pub enum ExecuteOutput {
+    Executed { state: TransformState },
+    Unsupported { cmd: PipeCommand, data: DeriveInput },
+}
+
+impl From<TransformState> for ExecuteOutput {
+    fn from(state: TransformState) -> Self {
+        Self::Executed { state }
     }
 }

@@ -1,46 +1,30 @@
-use crate::ast::Nothing;
 use proc_macro2::TokenStream;
 use syn::{
     parse::{Parse, ParseStream},
-    parse_quote, Path, Result,
+    Path, Result,
 };
-use transtype_lib::{TransformInput, TransformOutput, Transformer};
+use transtype_lib::{ListOf, PipeCommand, TransformRest, TransformState};
 
-pub fn expand(input: TokenStream) -> Result<TokenStream> {
-    let input: TransformInput<Pipe> = parse_quote!(
-        data={}
-        args={#input}
-        rest={}
-    );
-    input.transform()
-}
-
-struct Pipe;
-
-impl Transformer for Pipe {
-    type Data = Nothing;
-    type Args = PipeArgs;
-
-    fn transform(_: Nothing, args: Self::Args, _: &mut TokenStream) -> Result<TransformOutput> {
-        let PipeArgs { path, cmds } = args;
-        Ok(TransformOutput::Transferr {
-            path,
-            data: None,
-            args: cmds,
-        })
+pub fn expand(input: PipeInput) -> Result<TokenStream> {
+    let PipeInput { path, pipe } = input;
+    TransformState::Start {
+        path,
+        pipe: Some(pipe),
+        plus: None,
     }
+    .transform(TransformRest::empty())
 }
 
-struct PipeArgs {
+pub struct PipeInput {
     path: Path,
-    cmds: TokenStream,
+    pipe: ListOf<PipeCommand>,
 }
 
-impl Parse for PipeArgs {
+impl Parse for PipeInput {
     fn parse(input: ParseStream) -> Result<Self> {
         Ok(Self {
             path: input.parse()?,
-            cmds: input.parse()?,
+            pipe: input.parse()?,
         })
     }
 }

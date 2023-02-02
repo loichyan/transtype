@@ -5,15 +5,11 @@ use syn::{DeriveInput, Result};
 pub fn expand(data: DeriveInput) -> Result<TokenStream> {
     let name = &data.ident;
     Ok(quote!(macro_rules! #name {
-        (
-            data={}
-            args=$args:tt
-            rest=$rest:tt
-        ) => {
-            ::transtype::transform! {
+        ($($args:tt)*) => {
+            ::transtype::predefined! {
+                args={$($args)*}
                 data={#data}
-                args=$args
-                rest=$rest
+                save={}
             }
         };
     }))

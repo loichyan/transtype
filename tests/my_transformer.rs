@@ -15,14 +15,12 @@ macro_rules! my_transformer {
         rest=$rest:tt
     ) => {
         ::transtype::transform! {
-            data={}
-            args={
-                + {
-                    struct $name $body
-                    impl $name {
-                        fn hello(&self) {
-                            println!($hello, stringify!($name));
-                        }
+            @consume
+            data={
+                struct $name $body
+                impl $name {
+                    fn hello(&self) {
+                        println!($hello, stringify!($name));
                     }
                 }
             }

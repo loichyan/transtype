@@ -1,40 +1,38 @@
-use proc_macro2::TokenStream;
+use super::ast::{DeriveInputExt, PathExt, Selectors};
+use crate::{TransformRest, TransformState, Transformer};
 use syn::{punctuated::Punctuated, Attribute, DeriveInput, Field, Result, Token};
-use transtype_lib::{Command, TransformOutput};
-
-use crate::ast::{DeriveInputExt, PathExt, Selectors};
 
 pub struct Select;
 
-impl Command for Select {
+impl Transformer for Select {
     type Args = Selectors;
 
-    fn execute(
+    fn transform(
         mut data: DeriveInput,
         args: Self::Args,
-        _: &mut TokenStream,
-    ) -> Result<TransformOutput> {
+        _: &mut TransformRest,
+    ) -> Result<TransformState> {
         data.fields_iter()
             .for_each(|fields| args.select_fields(fields));
-        Ok(TransformOutput::Pipe { data })
+        Ok(TransformState::pipe(data))
     }
 }
 
 pub struct SelectAttr;
 
-impl Command for SelectAttr {
+impl Transformer for SelectAttr {
     type Args = Selectors;
 
-    fn execute(
+    fn transform(
         mut data: DeriveInput,
         args: Self::Args,
-        _: &mut TokenStream,
-    ) -> Result<TransformOutput> {
+        _: &mut TransformRest,
+    ) -> Result<TransformState> {
         args.select_attrs(&mut data.attrs);
         data.fields_iter()
             .flat_map(|fields| fields.iter_mut())
             .for_each(|field| args.select_attrs(&mut field.attrs));
-        Ok(TransformOutput::Pipe { data })
+        Ok(TransformState::pipe(data))
     }
 }
 
