@@ -9,12 +9,10 @@ use syn::{
 
 pub fn expand(input: TokenStream) -> Result<TokenStream> {
     let PipeInput { path, pipe } = syn::parse2(input)?;
-    TransformState::Start {
-        path: path.clone(),
-        pipe: Some(pipe),
-        plus: None,
-    }
-    .transform(TransformRest::empty(path))
+    TransformState::start(path.clone())
+        .pipe(pipe)
+        .build()
+        .transform(TransformRest::empty(path))
 }
 
 pub struct PipeInput {

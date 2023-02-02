@@ -113,7 +113,7 @@ impl Transformer for Debug {
         args: Self::Args,
         _: &mut TransformRest,
     ) -> Result<TransformState> {
-        Ok(TransformState::Debug { data, args })
+        Ok(TransformState::debug(data).args(args).build())
     }
 }
 
@@ -128,7 +128,7 @@ impl Transformer for Rename {
         _: &mut TransformRest,
     ) -> Result<TransformState> {
         data.ident = name;
-        Ok(TransformState::pipe(data))
+        Ok(TransformState::pipe(data).build())
     }
 }
 
@@ -142,7 +142,11 @@ impl Transformer for Save {
         name: Self::Args,
         _: &mut TransformRest,
     ) -> Result<TransformState> {
-        Ok(TransformState::Save { data, name })
+        Ok(crate::TransformSave {
+            data,
+            name: name.into_inner(),
+        }
+        .build())
     }
 }
 
@@ -156,6 +160,6 @@ impl Transformer for Finish {
         _: Self::Args,
         _: &mut TransformRest,
     ) -> Result<TransformState> {
-        Ok(TransformState::consume(data.into_token_stream()))
+        Ok(TransformState::consume(data.into_token_stream()).build())
     }
 }

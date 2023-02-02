@@ -1,4 +1,7 @@
-use crate::{builtin, kw, ListOf, NamedArg, PipeCommand, TransformState};
+use crate::{
+    builtin, kw, ListOf, NamedArg, PipeCommand, TransformConsume, TransformDebug, TransformPipe,
+    TransformSave, TransformStart, TransformState,
+};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
 use std::marker::PhantomData;
@@ -68,6 +71,7 @@ pub struct TransformRest {
     this: NamedArg<kw::this, Path>,
     pipe: NamedArg<kw::pipe, ListOf<PipeCommand>>,
     plus: NamedArg<kw::plus, TokenStream>,
+    mark: NamedArg<kw::mark, TokenStream>,
 }
 
 impl TransformRest {
@@ -80,18 +84,24 @@ impl TransformRest {
             .unwrap_or_else(|| path.span())
     }
 
+    /// Appends tokens which will always be expanded to the final stream.
+    pub fn append_mark(&mut self, mark: TokenStream) {
+        self.mark.content.extend(mark);
+    }
+
     pub(crate) fn empty(path: Path) -> Self {
         Self {
             this: NamedArg::new(path),
             pipe: Default::default(),
             plus: Default::default(),
+            mark: Default::default(),
         }
     }
 
     pub(crate) fn track_builtin(&mut self) {
         let span = self.span();
         let path = &self.this.content;
-        self.prepend_plus(quote_spanned!(span=> ::transtype::#path!{}));
+        self.append_mark(quote_spanned!(span=> ::transtype::#path!{}));
     }
 
     fn is_empty(&self) -> bool {
@@ -112,20 +122,16 @@ impl TransformRest {
             .extend(pipe.into_inner().into_iter().rev());
     }
 
-    fn prepend_plus(&mut self, plus: TokenStream) {
+    fn append_plus(&mut self, plus: TokenStream) {
         self.plus.content.extend(plus);
-    }
-
-    fn take(&mut self) -> TransformRest {
-        Self {
-            this: self.this.clone(),
-            pipe: self.pipe.take(),
-            plus: self.plus.take(),
-        }
     }
 
     fn take_plus(&mut self) -> TokenStream {
         std::mem::take(&mut self.plus.content)
+    }
+
+    fn take_mark(&mut self) -> TokenStream {
+        std::mem::take(&mut self.mark.content)
     }
 }
 
@@ -135,6 +141,7 @@ impl Parse for TransformRest {
             this: input.parse()?,
             pipe: input.parse()?,
             plus: input.parse()?,
+            mark: input.parse()?,
         })
     }
 }
@@ -144,6 +151,7 @@ impl ToTokens for TransformRest {
         self.this.to_tokens(tokens);
         self.pipe.to_tokens(tokens);
         self.plus.to_tokens(tokens);
+        self.mark.to_tokens(tokens);
     }
 }
 
@@ -159,21 +167,26 @@ impl TransformState {
         let mut state = self;
         Ok(loop {
             let data = match state {
-                Self::Consume { data } => {
+                Self::Consume(TransformConsume { mut data }) => {
                     if !rest.is_empty() {
                         return Err(syn::Error::new(
                             rest.span(),
                             "a consume command should not be followed by other commands",
                         ));
                     }
-                    let mut data = data.unwrap_or_default();
                     data.extend(rest.take_plus());
+                    data.extend(rest.take_mark());
                     break data;
                 }
-                Self::Debug { data, args } => {
+                Self::Debug(TransformDebug { data, args }) => {
                     let span = rest.span();
                     let name = format_ident!("DEBUG_{}", data.ident, span = span);
-                    let rest = rest.take();
+                    let rest = TransformRest {
+                        this: rest.this.clone(),
+                        pipe: rest.pipe.take(),
+                        plus: rest.plus.take(),
+                        mark: rest.mark.clone(),
+                    };
                     let data = quote_spanned!(span=>
                         data={#data}
                         args={#args}
@@ -187,24 +200,33 @@ impl TransformState {
                                 $visit! { #data }
                             };
                         }
-                    ));
+                    ))
+                    .build();
                     continue;
                 }
-                Self::Fork { .. } => {
+                Self::Fork(_) => {
                     todo!()
                 }
-                Self::Pipe { data, pipe, plus } => {
+                Self::Pipe(TransformPipe {
+                    data,
+                    pipe,
+                    plus,
+                    mark,
+                }) => {
                     if let Some(pipe) = pipe {
                         rest.prepend_pipe(pipe);
                     }
                     if let Some(plus) = plus {
-                        rest.prepend_plus(plus);
+                        rest.append_plus(plus);
+                    }
+                    if let Some(mark) = mark {
+                        rest.append_mark(mark);
                     }
                     data
                 }
-                Self::Save { data, name } => {
+                Self::Save(TransformSave { data, name }) => {
                     let span = rest.span();
-                    let name = name.into_inner().unwrap_or_else(|| data.ident.clone());
+                    let name = name.unwrap_or_else(|| data.ident.clone());
                     let plus = rest.take_plus();
                     state = Self::consume(quote_spanned!(span=>
                         macro_rules! #name {
@@ -216,16 +238,14 @@ impl TransformState {
                                 }
                             };
                         }
-                    ));
+                    ))
+                    .build();
                     continue;
                 }
-                Self::Start { path, pipe, plus } => {
+                Self::Start(TransformStart { path, pipe }) => {
                     rest.set_this(path.clone());
                     if let Some(pipe) = pipe {
                         rest.prepend_pipe(pipe);
-                    }
-                    if let Some(plus) = plus {
-                        rest.prepend_plus(plus);
                     }
                     let span = rest.span();
                     break quote_spanned!(span=>

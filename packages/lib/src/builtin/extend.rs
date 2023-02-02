@@ -17,18 +17,12 @@ impl Transformer for Extend {
     ) -> Result<TransformState> {
         let span = rest.span();
         Ok(match args {
-            ExtendArgs::Path(path) => TransformState::Start {
-                path,
-                pipe: Some(
-                    [(
-                        parse_quote_spanned!(span=> extend),
-                        quote_spanned!(span=> as #data),
-                    )]
-                    .into_iter()
-                    .collect(),
-                ),
-                plus: None,
-            },
+            ExtendArgs::Path(path) => TransformState::start(path)
+                .add_pipe(
+                    parse_quote_spanned!(span=> extend),
+                    quote_spanned!(span=> as #data),
+                )
+                .build(),
             ExtendArgs::As(ExtendAs { data: mut dest, .. }) => {
                 match (&mut dest.data, data.data) {
                     (Data::Struct(dest), Data::Struct(src)) => {
@@ -41,7 +35,7 @@ impl Transformer for Extend {
                     }
                     _ => todo!(),
                 }
-                TransformState::pipe(dest)
+                TransformState::pipe(dest).build()
             }
             ExtendArgs::Struct(_) => todo!(),
         })

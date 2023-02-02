@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::{kw, transformer::TransformRest, ListOf, NamedArg, PipeCommand, TransformState};
+use crate::{kw, transformer::TransformRest, ListOf, NamedArg, PipeCommand};
 use proc_macro2::{Span, TokenStream};
 use syn::{
     parse::{Parse, ParseStream},
@@ -9,38 +9,40 @@ use syn::{
 };
 
 pub fn expand(input: TokenStream) -> Result<TokenStream> {
-    let input = syn::parse2::<MacroInput>(input)?;
+    let input = syn::parse2::<TransformInput>(input)?;
     let state;
     let rest;
     match input.ty {
         TransformType::Consume(ty) => {
             rest = ty.rest.content;
             let TransformConsume { data, .. } = ty;
-            state = TransformState::Consume {
-                data: data.map(content),
-            };
+            state = crate::TransformConsume { data: data.content }.build();
         }
         TransformType::Pipe(ty) => {
             rest = ty.rest.content;
             let TransformPipe {
-                data, pipe, plus, ..
+                data,
+                pipe,
+                plus,
+                mark,
+                ..
             } = ty;
-            state = TransformState::Pipe {
+            state = crate::TransformPipe {
                 data: data.content,
                 pipe: pipe.map(content),
                 plus: plus.map(content),
-            };
+                mark: mark.map(content),
+            }
+            .build();
         }
         TransformType::Start(ty) => {
             rest = ty.rest.content;
-            let TransformStart {
-                path, pipe, plus, ..
-            } = ty;
-            state = TransformState::Start {
+            let TransformStart { path, pipe, .. } = ty;
+            state = crate::TransformStart {
                 path: path.content,
                 pipe: pipe.map(content),
-                plus: plus.map(content),
-            };
+            }
+            .build();
         }
     }
     state.transform(rest)
@@ -50,12 +52,12 @@ fn content<K, V>(t: NamedArg<K, V>) -> V {
     t.content
 }
 
-struct MacroInput {
+struct TransformInput {
     at_token: Token![@],
     ty: TransformType,
 }
 
-impl Parse for MacroInput {
+impl Parse for TransformInput {
     fn parse(input: ParseStream) -> Result<Self> {
         macro_rules! parse_type {
             ($($key:ident => $ty:ident,)*) => {{
@@ -133,7 +135,7 @@ type OptNamedArg<K, V> = Option<NamedArg<K, V>>;
 
 struct TransformConsume {
     name: kw::consume,
-    data: OptNamedArg<kw::data, TokenStream>,
+    data: NamedArg<kw::data, TokenStream>,
     rest: NamedArg<kw::rest, TransformRest>,
 }
 
@@ -142,7 +144,7 @@ impl Parse for TransformConsume {
         let name = input.parse::<kw::consume>()?;
         let span = name.span();
         parse_optional!(input => data, rest);
-        assert_some!(span=> rest);
+        assert_some!(span=> data, rest);
         Ok(Self { name, data, rest })
     }
 }
@@ -152,6 +154,7 @@ struct TransformPipe {
     data: NamedArg<kw::data, DeriveInput>,
     pipe: OptNamedArg<kw::pipe, ListOf<PipeCommand>>,
     plus: OptNamedArg<kw::plus, TokenStream>,
+    mark: OptNamedArg<kw::mark, TokenStream>,
     rest: NamedArg<kw::rest, TransformRest>,
 }
 
@@ -159,13 +162,14 @@ impl Parse for TransformPipe {
     fn parse(input: ParseStream) -> Result<Self> {
         let name = input.parse::<kw::pipe>()?;
         let span = name.span();
-        parse_optional!(input => data, pipe, plus, rest);
+        parse_optional!(input => data, pipe, plus, mark, rest);
         assert_some!(span=> data, rest);
         Ok(Self {
             name,
             data,
             pipe,
             plus,
+            mark,
             rest,
         })
     }
@@ -175,7 +179,6 @@ struct TransformStart {
     name: kw::start,
     path: NamedArg<kw::path, Path>,
     pipe: OptNamedArg<kw::pipe, ListOf<PipeCommand>>,
-    plus: OptNamedArg<kw::plus, TokenStream>,
     rest: NamedArg<kw::rest, TransformRest>,
 }
 
@@ -183,13 +186,12 @@ impl Parse for TransformStart {
     fn parse(input: ParseStream) -> Result<Self> {
         let name = input.parse::<kw::start>()?;
         let span = name.span();
-        parse_optional!(input => path, pipe, plus, rest);
+        parse_optional!(input => path, pipe, rest);
         assert_some!(span=> path, rest);
         Ok(Self {
             name,
             path,
             pipe,
-            plus,
             rest,
         })
     }

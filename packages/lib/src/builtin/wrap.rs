@@ -36,7 +36,7 @@ impl Transformer for Wrap {
             }
         }
 
-        Ok(TransformState::pipe(data))
+        Ok(TransformState::pipe(data).build())
     }
 }
 
@@ -74,18 +74,15 @@ impl Transformer for Wrapped {
             _ => unreachable!(),
         }
         let name = &data.ident;
-        Ok(TransformState::Pipe {
-            pipe: None,
-            plus: Some(quote_spanned!(span=>
-                impl ::transtype::Wrapped for #name {
-                    type Original = #from;
+        let plus = quote_spanned!(span=>
+            impl ::transtype::Wrapped for #name {
+                type Original = #from;
 
-                    fn unwrap(self) -> Self::Original {
-                        #from #body
-                    }
+                fn unwrap(self) -> Self::Original {
+                    #from #body
                 }
-            )),
-            data,
-        })
+            }
+        );
+        Ok(TransformState::pipe(data).plus(plus).build())
     }
 }

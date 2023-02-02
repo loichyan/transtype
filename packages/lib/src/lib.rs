@@ -22,6 +22,7 @@ mod kw {
     custom_keyword!(args);
     custom_keyword!(consume);
     custom_keyword!(data);
+    custom_keyword!(mark);
     custom_keyword!(path);
     custom_keyword!(pipe);
     custom_keyword!(plus);
@@ -64,79 +65,218 @@ pub enum TransformState {
     ///     rest={#rest}
     /// }
     /// ```
-    Consume { data: Option<TokenStream> },
+    Consume(TransformConsume),
     /// ```
     /// pipe! {
     ///     -> debug(#args)
     /// }
     /// ```
-    Debug {
-        data: DeriveInput,
-        args: TokenStream,
-    },
+    Debug(TransformDebug),
     /// ```
     /// pipe! {
     ///     -> fork(#fork)
     /// }
     /// ```
-    Fork { data: DeriveInput, fork: ListOf<()> },
+    Fork(TransformFork),
     /// ```
     /// transform! {
     ///     @pipe
     ///     data={#data}
     ///     pipe={#pipe}
     ///     plus={#plus}
+    ///     mark={#mark}
     ///     rest={#rest}
     /// }
     /// ```
-    Pipe {
-        data: DeriveInput,
-        pipe: Option<ListOf<PipeCommand>>,
-        plus: Option<TokenStream>,
-    },
+    Pipe(TransformPipe),
     /// ```
     /// pipe! {
     ///     -> save(#name)
     /// }
     /// ```
-    Save {
-        data: DeriveInput,
-        name: Optional<Ident>,
-    },
+    Save(TransformSave),
     /// ```
     /// transform! {
     ///     @start
     ///     path={#path}
     ///     pipe={#pipe}
-    ///     plus={#plus}
     ///     rest={#rest}
     /// }
     /// ```
-    Start {
-        path: Path,
-        pipe: Option<ListOf<PipeCommand>>,
-        plus: Option<TokenStream>,
-    },
+    Start(TransformStart),
 }
 
 impl TransformState {
-    pub fn consume(data: TokenStream) -> Self {
-        Self::Consume { data: Some(data) }
+    pub fn consume(data: TokenStream) -> TransformConsume {
+        TransformConsume { data }
     }
 
-    pub fn pipe(data: DeriveInput) -> Self {
-        Self::Pipe {
+    pub fn debug(data: DeriveInput) -> TransformDebug {
+        TransformDebug {
             data,
-            pipe: None,
-            plus: None,
+            args: Default::default(),
         }
     }
 
-    pub fn start(path: Path) -> Self {
-        Self::Start {
-            path,
-            pipe: None,
-            plus: None,
+    pub fn fork(data: DeriveInput) -> TransformFork {
+        TransformFork {
+            data,
+            fork: Default::default(),
         }
+    }
+
+    pub fn pipe(data: DeriveInput) -> TransformPipe {
+        TransformPipe {
+            data,
+            pipe: Default::default(),
+            plus: Default::default(),
+            mark: Default::default(),
+        }
+    }
+
+    pub fn save(data: DeriveInput) -> TransformSave {
+        TransformSave {
+            data,
+            name: Default::default(),
+        }
+    }
+
+    pub fn start(path: Path) -> TransformStart {
+        TransformStart {
+            path,
+            pipe: Default::default(),
+        }
+    }
+}
+
+pub struct TransformConsume {
+    data: TokenStream,
+}
+
+impl TransformConsume {
+    pub fn build(self) -> TransformState {
+        TransformState::Consume(self)
+    }
+}
+
+pub struct TransformDebug {
+    data: DeriveInput,
+    args: Option<TokenStream>,
+}
+
+impl TransformDebug {
+    pub fn args(self, args: TokenStream) -> Self {
+        Self {
+            args: Some(args),
+            ..self
+        }
+    }
+
+    pub fn build(self) -> TransformState {
+        TransformState::Debug(self)
+    }
+}
+
+pub struct TransformFork {
+    data: DeriveInput,
+    fork: ListOf<()>,
+}
+
+impl TransformFork {
+    pub fn add_fork(mut self, fork: ()) -> Self {
+        self.fork.push(fork);
+        self
+    }
+
+    pub fn fork(self, fork: ListOf<()>) -> Self {
+        Self { fork, ..self }
+    }
+
+    pub fn build(self) -> TransformState {
+        TransformState::Fork(self)
+    }
+}
+
+pub struct TransformPipe {
+    data: DeriveInput,
+    pipe: Option<ListOf<PipeCommand>>,
+    plus: Option<TokenStream>,
+    mark: Option<TokenStream>,
+}
+
+impl TransformPipe {
+    pub fn add_pipe(mut self, path: Path, args: TokenStream) -> Self {
+        self.pipe
+            .get_or_insert_with(Default::default)
+            .push((path, args).into());
+        self
+    }
+
+    pub fn pipe(self, pipe: ListOf<PipeCommand>) -> Self {
+        Self {
+            pipe: Some(pipe),
+            ..self
+        }
+    }
+
+    pub fn plus(self, plus: TokenStream) -> Self {
+        Self {
+            plus: Some(plus),
+            ..self
+        }
+    }
+
+    pub fn mark(self, mark: TokenStream) -> Self {
+        Self {
+            mark: Some(mark),
+            ..self
+        }
+    }
+
+    pub fn build(self) -> TransformState {
+        TransformState::Pipe(self)
+    }
+}
+
+pub struct TransformSave {
+    data: DeriveInput,
+    name: Option<Ident>,
+}
+
+impl TransformSave {
+    pub fn name(self, name: Ident) -> Self {
+        Self {
+            name: Some(name),
+            ..self
+        }
+    }
+
+    pub fn build(self) -> TransformState {
+        TransformState::Save(self)
+    }
+}
+
+pub struct TransformStart {
+    path: Path,
+    pipe: Option<ListOf<PipeCommand>>,
+}
+
+impl TransformStart {
+    pub fn add_pipe(mut self, path: Path, args: TokenStream) -> Self {
+        self.pipe
+            .get_or_insert_with(Default::default)
+            .push((path, args).into());
+        self
+    }
+
+    pub fn pipe(self, pipe: ListOf<PipeCommand>) -> Self {
+        Self {
+            pipe: Some(pipe),
+            ..self
+        }
+    }
+
+    pub fn build(self) -> TransformState {
+        TransformState::Start(self)
     }
 }

@@ -14,7 +14,7 @@ impl Transformer for Select {
     ) -> Result<TransformState> {
         data.fields_iter()
             .for_each(|fields| args.select_fields(fields));
-        Ok(TransformState::pipe(data))
+        Ok(TransformState::pipe(data).build())
     }
 }
 
@@ -32,7 +32,7 @@ impl Transformer for SelectAttr {
         data.fields_iter()
             .flat_map(|fields| fields.iter_mut())
             .for_each(|field| args.select_attrs(&mut field.attrs));
-        Ok(TransformState::pipe(data))
+        Ok(TransformState::pipe(data).build())
     }
 }
 
