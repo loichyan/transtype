@@ -1,16 +1,20 @@
-mod ast;
 mod builtin;
 mod define;
 mod pipe;
 mod predefined;
 mod transform;
+mod transformer;
+mod utils;
 
-use builtin::DefaultExecutor;
 use proc_macro2::TokenStream;
-use quote::quote_spanned;
-use syn::{parse::Parse, DeriveInput, Path, Result};
+use syn::{DeriveInput, Ident, Path, Result};
 
-pub use ast::{ListOf, NamedArg, Optional, PipeCommand, TransformInput, TransformRest};
+#[doc(inline)]
+pub use self::{
+    pipe::PipeCommand,
+    transformer::{ExecuteState, Executor, TransformInput, TransformRest, Transformer},
+    utils::{ListOf, NamedArg, Optional},
+};
 
 mod kw {
     use syn::custom_keyword;
@@ -52,24 +56,6 @@ fn expand(f: fn(TokenStream) -> Result<TokenStream>, input: TokenStream) -> Toke
     f(input).unwrap_or_else(syn::Error::into_compile_error)
 }
 
-pub trait Transformer: Sized {
-    type Args: Parse;
-
-    fn transform(
-        data: DeriveInput,
-        args: Self::Args,
-        rest: &mut TransformRest,
-    ) -> Result<TransformState>;
-}
-
-pub trait Executor: Sized {
-    fn execute(
-        cmd: PipeCommand,
-        data: DeriveInput,
-        rest: &mut TransformRest,
-    ) -> Result<ExecuteOutput>;
-}
-
 pub enum TransformState {
     /// ```
     /// transform! {
@@ -79,6 +65,21 @@ pub enum TransformState {
     /// }
     /// ```
     Consume { data: Option<TokenStream> },
+    /// ```
+    /// pipe! {
+    ///     -> debug(#args)
+    /// }
+    /// ```
+    Debug {
+        data: DeriveInput,
+        args: TokenStream,
+    },
+    /// ```
+    /// pipe! {
+    ///     -> fork(#fork)
+    /// }
+    /// ```
+    Fork { data: DeriveInput, fork: ListOf<()> },
     /// ```
     /// transform! {
     ///     @pipe
@@ -92,6 +93,15 @@ pub enum TransformState {
         data: DeriveInput,
         pipe: Option<ListOf<PipeCommand>>,
         plus: Option<TokenStream>,
+    },
+    /// ```
+    /// pipe! {
+    ///     -> save(#name)
+    /// }
+    /// ```
+    Save {
+        data: DeriveInput,
+        name: Optional<Ident>,
     },
     /// ```
     /// transform! {
@@ -128,93 +138,5 @@ impl TransformState {
             pipe: None,
             plus: None,
         }
-    }
-
-    pub(crate) fn transform(self, rest: TransformRest) -> Result<TokenStream> {
-        self.transform_with::<DefaultExecutor>(rest)
-    }
-
-    pub(crate) fn transform_with<T: Executor>(
-        self,
-        mut rest: TransformRest,
-    ) -> Result<TokenStream> {
-        let mut state = self;
-        Ok(loop {
-            let data = match state {
-                TransformState::Consume { data } => {
-                    if !rest.is_empty() {
-                        return Err(syn::Error::new(
-                            rest.span(),
-                            "a consume command should not be followed by other commands",
-                        ));
-                    }
-                    let mut data = data.unwrap_or_default();
-                    data.extend(rest.take_plus());
-                    break data;
-                }
-                TransformState::Pipe { data, pipe, plus } => {
-                    if let Some(pipe) = pipe {
-                        rest.prepend_pipe(pipe);
-                    }
-                    if let Some(plus) = plus {
-                        rest.prepend_plus(plus);
-                    }
-                    data
-                }
-                TransformState::Start { path, pipe, plus } => {
-                    if let Some(pipe) = pipe {
-                        rest.prepend_pipe(pipe);
-                    }
-                    if let Some(plus) = plus {
-                        rest.prepend_plus(plus);
-                    }
-                    rest.set_this(path.clone());
-                    let span = rest.span();
-                    break quote_spanned!(span=>
-                        #path! { rest={#rest} }
-                    );
-                }
-            };
-            match rest.next_pipe() {
-                Some(cmd) => {
-                    rest.set_this(cmd.path().clone());
-                    let output = match T::execute(cmd, data, &mut rest) {
-                        Ok(t) => t,
-                        Err(mut e) => {
-                            e.combine(syn::Error::new(
-                                rest.span(),
-                                "an error occurs in this command",
-                            ));
-                            return Err(e);
-                        }
-                    };
-                    match output {
-                        ExecuteOutput::Executed { state: s } => {
-                            state = s;
-                        }
-                        ExecuteOutput::Unsupported { cmd, data } => {
-                            break cmd.execute(data, rest);
-                        }
-                    }
-                }
-                None => {
-                    return Err(syn::Error::new(
-                        rest.span(),
-                        "a pipe command should be consumed",
-                    ));
-                }
-            }
-        })
-    }
-}
-
-pub enum ExecuteOutput {
-    Executed { state: TransformState },
-    Unsupported { cmd: PipeCommand, data: DeriveInput },
-}
-
-impl From<TransformState> for ExecuteOutput {
-    fn from(state: TransformState) -> Self {
-        Self::Executed { state }
     }
 }

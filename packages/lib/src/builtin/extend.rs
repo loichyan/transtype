@@ -5,7 +5,7 @@ use syn::{
     parse_quote_spanned, token, Data, DeriveInput, Fields, Path, Result, Token,
 };
 
-pub struct Extend;
+pub(crate) struct Extend;
 
 impl Transformer for Extend {
     type Args = ExtendArgs;

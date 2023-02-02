@@ -1,4 +1,6 @@
-use crate::{kw, ListOf, NamedArg, PipeCommand, TransformRest, TransformState};
+#![allow(dead_code)]
+
+use crate::{kw, transformer::TransformRest, ListOf, NamedArg, PipeCommand, TransformState};
 use proc_macro2::{Span, TokenStream};
 use syn::{
     parse::{Parse, ParseStream},
@@ -7,7 +9,7 @@ use syn::{
 };
 
 pub fn expand(input: TokenStream) -> Result<TokenStream> {
-    let input = syn::parse2::<TransformInput>(input)?;
+    let input = syn::parse2::<MacroInput>(input)?;
     let state;
     let rest;
     match input.ty {
@@ -48,12 +50,12 @@ fn content<K, V>(t: NamedArg<K, V>) -> V {
     t.content
 }
 
-pub struct TransformInput {
-    pub at_token: Token![@],
-    pub ty: TransformType,
+struct MacroInput {
+    at_token: Token![@],
+    ty: TransformType,
 }
 
-impl Parse for TransformInput {
+impl Parse for MacroInput {
     fn parse(input: ParseStream) -> Result<Self> {
         macro_rules! parse_type {
             ($($key:ident => $ty:ident,)*) => {{
@@ -78,7 +80,7 @@ impl Parse for TransformInput {
     }
 }
 
-pub enum TransformType {
+enum TransformType {
     Consume(TransformConsume),
     Pipe(TransformPipe),
     Start(TransformStart),
@@ -129,10 +131,10 @@ macro_rules! assert_some {
 
 type OptNamedArg<K, V> = Option<NamedArg<K, V>>;
 
-pub struct TransformConsume {
-    pub name: kw::consume,
-    pub data: OptNamedArg<kw::data, TokenStream>,
-    pub rest: NamedArg<kw::rest, TransformRest>,
+struct TransformConsume {
+    name: kw::consume,
+    data: OptNamedArg<kw::data, TokenStream>,
+    rest: NamedArg<kw::rest, TransformRest>,
 }
 
 impl Parse for TransformConsume {
@@ -145,12 +147,12 @@ impl Parse for TransformConsume {
     }
 }
 
-pub struct TransformPipe {
-    pub name: kw::pipe,
-    pub data: NamedArg<kw::data, DeriveInput>,
-    pub pipe: OptNamedArg<kw::pipe, ListOf<PipeCommand>>,
-    pub plus: OptNamedArg<kw::plus, TokenStream>,
-    pub rest: NamedArg<kw::rest, TransformRest>,
+struct TransformPipe {
+    name: kw::pipe,
+    data: NamedArg<kw::data, DeriveInput>,
+    pipe: OptNamedArg<kw::pipe, ListOf<PipeCommand>>,
+    plus: OptNamedArg<kw::plus, TokenStream>,
+    rest: NamedArg<kw::rest, TransformRest>,
 }
 
 impl Parse for TransformPipe {
@@ -169,12 +171,12 @@ impl Parse for TransformPipe {
     }
 }
 
-pub struct TransformStart {
-    pub name: kw::start,
-    pub path: NamedArg<kw::path, Path>,
-    pub pipe: OptNamedArg<kw::pipe, ListOf<PipeCommand>>,
-    pub plus: OptNamedArg<kw::plus, TokenStream>,
-    pub rest: NamedArg<kw::rest, TransformRest>,
+struct TransformStart {
+    name: kw::start,
+    path: NamedArg<kw::path, Path>,
+    pipe: OptNamedArg<kw::pipe, ListOf<PipeCommand>>,
+    plus: OptNamedArg<kw::plus, TokenStream>,
+    rest: NamedArg<kw::rest, TransformRest>,
 }
 
 impl Parse for TransformStart {

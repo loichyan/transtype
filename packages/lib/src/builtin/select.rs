@@ -2,7 +2,7 @@ use super::ast::{DeriveInputExt, PathExt, Selectors};
 use crate::{TransformRest, TransformState, Transformer};
 use syn::{punctuated::Punctuated, Attribute, DeriveInput, Field, Result, Token};
 
-pub struct Select;
+pub(crate) struct Select;
 
 impl Transformer for Select {
     type Args = Selectors;

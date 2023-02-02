@@ -4,7 +4,7 @@ use proc_macro2::TokenStream;
 use quote::quote_spanned;
 use syn::{parse_quote, Data, DeriveInput, Ident, Member, Result, Type};
 
-pub struct Wrap;
+pub(crate) struct Wrap;
 
 impl Transformer for Wrap {
     type Args = Ident;
@@ -40,7 +40,7 @@ impl Transformer for Wrap {
     }
 }
 
-pub struct Wrapped;
+pub(crate) struct Wrapped;
 
 impl Transformer for Wrapped {
     type Args = Type;
