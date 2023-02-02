@@ -37,13 +37,15 @@ impl<T: Transformer> Parse for TransformInput<T> {
 }
 
 pub struct TransformRest {
+    this: NamedArg<kw::this, Path>,
     pipe: NamedArg<kw::pipe, ListOf<PipeCommand>>,
     plus: NamedArg<kw::plus, TokenStream>,
 }
 
 impl TransformRest {
-    pub(crate) fn empty() -> Self {
+    pub(crate) fn empty(path: Path) -> Self {
         Self {
+            this: NamedArg::new(path),
             pipe: Default::default(),
             plus: Default::default(),
         }
@@ -51,19 +53,6 @@ impl TransformRest {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.pipe.content.is_empty()
-    }
-
-    pub(crate) fn take(&mut self) -> Self {
-        let pipe = self.pipe.take();
-        Self {
-            plus: self.plus.take(),
-            pipe: std::mem::replace(&mut self.pipe, pipe),
-        }
-    }
-
-    pub(crate) fn prepend(&mut self, rest: Self) {
-        self.prepend_pipe(rest.pipe.content);
-        self.prepend_plus(rest.plus.content);
     }
 
     pub(crate) fn next_pipe(&mut self) -> Option<PipeCommand> {
@@ -88,6 +77,7 @@ impl TransformRest {
 impl Parse for TransformRest {
     fn parse(input: ParseStream) -> Result<Self> {
         Ok(Self {
+            this: input.parse()?,
             pipe: input.parse()?,
             plus: input.parse()?,
         })
@@ -96,6 +86,7 @@ impl Parse for TransformRest {
 
 impl ToTokens for TransformRest {
     fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.this.to_tokens(tokens);
         self.pipe.to_tokens(tokens);
         self.plus.to_tokens(tokens);
     }
@@ -171,6 +162,7 @@ impl ToTokens for PipeCommand {
     }
 }
 
+#[derive(Clone)]
 pub struct ListOf<T>(Vec<T>);
 
 impl<T> ListOf<T> {
@@ -238,24 +230,24 @@ impl<T: ToTokens> ToTokens for ListOf<T> {
     }
 }
 
+#[derive(Clone, Default)]
 pub struct NamedArg<K, V> {
     pub name: K,
-    pub eq_token: Token![=],
+    pub eq_token: token::Eq,
     pub brace_token: token::Brace,
     pub content: V,
 }
 
-impl<K, V> Default for NamedArg<K, V>
+impl<K, V> NamedArg<K, V>
 where
     K: Default,
-    V: Default,
 {
-    fn default() -> Self {
+    pub fn new(content: V) -> Self {
         Self {
-            name: K::default(),
+            name: Default::default(),
             eq_token: Default::default(),
             brace_token: Default::default(),
-            content: V::default(),
+            content,
         }
     }
 }

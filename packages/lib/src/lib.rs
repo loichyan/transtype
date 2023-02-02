@@ -22,8 +22,8 @@ mod kw {
     custom_keyword!(pipe);
     custom_keyword!(plus);
     custom_keyword!(rest);
-    custom_keyword!(save);
     custom_keyword!(start);
+    custom_keyword!(this);
 }
 
 #[doc(hidden)]

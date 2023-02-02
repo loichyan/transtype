@@ -113,14 +113,14 @@ impl Transformer for Debug {
         args: Self::Args,
         rest: &mut TransformRest,
     ) -> Result<TransformState> {
-        let rest = rest.take();
+        let plus = rest.take_plus();
         let name = format_ident!("DEBUG_{}", data.ident, span = data.ident.span());
         Ok(TransformState::consume(quote!(macro_rules! #name {
             () => {
                 stringify! {
                     data={#data}
                     args={#args}
-                    rest={#rest}
+                    plus={#plus}
                 }
             };
         })))
@@ -153,13 +153,13 @@ impl Transformer for Save {
         rest: &mut TransformRest,
     ) -> Result<TransformState> {
         let name = name.unwrap_or_else(|| data.ident.clone());
-        let rest = rest.take();
+        let plus = rest.take_plus();
         Ok(TransformState::consume(quote!(macro_rules! #name {
             ($($args:tt)*) => {
                 ::transtype::__predefined! {
                     args={$($args)*}
                     data={#data}
-                    save={#rest}
+                    plus={#plus}
                 }
             };
         })))
