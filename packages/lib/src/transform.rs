@@ -1,13 +1,13 @@
-use crate::kw;
+use crate::{kw, ListOf, NamedArg, PipeCommand, TransformRest, TransformState};
 use proc_macro2::{Span, TokenStream};
 use syn::{
     parse::{Parse, ParseStream},
     spanned::Spanned,
     DeriveInput, Path, Result, Token,
 };
-use transtype_lib::{ListOf, NamedArg, PipeCommand, TransformRest, TransformState};
 
-pub fn expand(input: TransformInput) -> Result<TokenStream> {
+pub fn expand(input: TokenStream) -> Result<TokenStream> {
+    let input = syn::parse2::<TransformInput>(input)?;
     let state;
     let rest;
     match input.ty {

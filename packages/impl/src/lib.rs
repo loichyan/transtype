@@ -1,59 +1,50 @@
-mod define;
-mod pipe;
-mod predefined;
-mod transform;
-
-use pipe::PipeInput;
-use predefined::PredefinedInput;
 use proc_macro::TokenStream;
-use syn::{parse::Nothing, parse_macro_input, DeriveInput};
-use transform::TransformInput;
-
-mod kw {
-    use syn::custom_keyword;
-
-    custom_keyword!(args);
-    custom_keyword!(consume);
-    custom_keyword!(data);
-    custom_keyword!(pipe);
-    custom_keyword!(rest);
-    custom_keyword!(save);
-    custom_keyword!(start);
-    custom_keyword!(path);
-    custom_keyword!(plus);
-}
+use syn::{parse::Nothing, parse_macro_input};
 
 #[proc_macro_attribute]
 pub fn define(attr: TokenStream, input: TokenStream) -> TokenStream {
     parse_macro_input!(attr as Nothing);
-    let input = parse_macro_input!(input as DeriveInput);
-    define::expand(input)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+    transtype_lib::private::define(input.into()).into()
 }
 
 #[proc_macro]
-pub fn pipe(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as PipeInput);
-    pipe::expand(input)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+#[doc(hidden)]
+pub fn __predefined(input: TokenStream) -> TokenStream {
+    transtype_lib::private::predefined(input.into()).into()
 }
 
-#[proc_macro]
-pub fn transform(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as TransformInput);
-    transform::expand(input)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+macro_rules! expose_macros {
+    ($($(#[$attr:meta])* $vis:vis fn $name:ident;)*) => {$(
+        $(#[$attr])*
+        #[proc_macro]
+        $vis fn $name(input: TokenStream) -> TokenStream {
+            ::transtype_lib::private::$name(input.into()).into()
+        }
+    )*};
 }
 
-#[proc_macro]
-pub fn predefined(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as PredefinedInput);
-    predefined::expand(input)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
-}
+expose_macros! {
+    pub fn pipe;
 
-transtype_lib::define_builtins!();
+    pub fn transform;
+
+    /// Consumes all rest tokens, generates a macro prefixes with `DEBUG_` which
+    /// returns the stringified tokens tree.
+    pub fn debug;
+
+    pub fn extend;
+
+    pub fn finish;
+
+    pub fn rename;
+
+    pub fn save;
+
+    pub fn select;
+
+    pub fn select_attr;
+
+    pub fn wrap;
+
+    pub fn wrapped;
+}

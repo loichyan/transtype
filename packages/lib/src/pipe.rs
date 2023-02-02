@@ -1,12 +1,12 @@
+use crate::{ListOf, PipeCommand, TransformRest, TransformState};
 use proc_macro2::TokenStream;
 use syn::{
     parse::{Parse, ParseStream},
     Path, Result,
 };
-use transtype_lib::{ListOf, PipeCommand, TransformRest, TransformState};
 
-pub fn expand(input: PipeInput) -> Result<TokenStream> {
-    let PipeInput { path, pipe } = input;
+pub fn expand(input: TokenStream) -> Result<TokenStream> {
+    let PipeInput { path, pipe } = syn::parse2(input)?;
     TransformState::Start {
         path,
         pipe: Some(pipe),

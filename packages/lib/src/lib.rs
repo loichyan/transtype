@@ -1,38 +1,55 @@
-#[macro_use]
-mod builtin;
 mod ast;
+mod builtin;
+mod define;
+mod pipe;
+mod predefined;
+mod transform;
 
 use builtin::DefaultExecutor;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{parse::Parse, spanned::Spanned, DeriveInput, Path, Result};
 
-pub use ast::{
-    ListOf, NamedArg, Optional, PipeCommand, PredefinedInput, TransformInput, TransformRest,
-};
+pub use ast::{ListOf, NamedArg, Optional, PipeCommand, TransformInput, TransformRest};
 
 mod kw {
     use syn::custom_keyword;
 
     custom_keyword!(args);
+    custom_keyword!(consume);
     custom_keyword!(data);
+    custom_keyword!(path);
     custom_keyword!(pipe);
-    custom_keyword!(rest);
     custom_keyword!(plus);
+    custom_keyword!(rest);
+    custom_keyword!(save);
+    custom_keyword!(start);
 }
 
 #[doc(hidden)]
 pub mod private {
-    use crate::{TransformInput, Transformer};
+    #[doc(inline)]
+    pub use crate::builtin::commands::*;
     use proc_macro2::TokenStream;
 
-    #[doc(inline)]
-    pub use crate::builtin::commands;
-
-    pub fn expand_builtin<T: Transformer>(input: TokenStream) -> TokenStream {
-        (|| syn::parse2::<TransformInput<T>>(input)?.transform())()
-            .unwrap_or_else(syn::Error::into_compile_error)
+    macro_rules! expose_expand {
+        ($($name:ident),* $(,)?) => {$(
+            pub fn $name(input: TokenStream) -> TokenStream {
+                $crate::expand($crate::$name::expand, input)
+            }
+        )*};
     }
+
+    expose_expand! {
+       define,
+       pipe,
+       predefined,
+       transform
+    }
+}
+
+fn expand(f: fn(TokenStream) -> Result<TokenStream>, input: TokenStream) -> TokenStream {
+    f(input).unwrap_or_else(syn::Error::into_compile_error)
 }
 
 pub trait Transformer: Sized {
@@ -113,11 +130,14 @@ impl TransformState {
         }
     }
 
-    pub fn transform(self, rest: TransformRest) -> Result<TokenStream> {
+    pub(crate) fn transform(self, rest: TransformRest) -> Result<TokenStream> {
         self.transform_with::<DefaultExecutor>(rest)
     }
 
-    pub fn transform_with<T: Executor>(self, mut rest: TransformRest) -> Result<TokenStream> {
+    pub(crate) fn transform_with<T: Executor>(
+        self,
+        mut rest: TransformRest,
+    ) -> Result<TokenStream> {
         let mut state = self;
         let mut span = Span::call_site();
         Ok(loop {

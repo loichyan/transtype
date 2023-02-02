@@ -9,18 +9,6 @@ use syn::{
     token, DeriveInput, Path, Result, Token,
 };
 
-pub struct PredefinedInput {
-    pub rest: NamedArg<kw::rest, TransformRest>,
-}
-
-impl Parse for PredefinedInput {
-    fn parse(input: ParseStream) -> Result<Self> {
-        Ok(Self {
-            rest: input.parse()?,
-        })
-    }
-}
-
 pub struct TransformInput<T: Transformer> {
     data: NamedArg<kw::data, DeriveInput>,
     args: NamedArg<kw::args, T::Args>,
@@ -54,18 +42,18 @@ pub struct TransformRest {
 }
 
 impl TransformRest {
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self {
             pipe: Default::default(),
             plus: Default::default(),
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.pipe.content.is_empty()
     }
 
-    pub fn take(&mut self) -> Self {
+    pub(crate) fn take(&mut self) -> Self {
         let pipe = self.pipe.take();
         Self {
             plus: self.plus.take(),
@@ -73,7 +61,7 @@ impl TransformRest {
         }
     }
 
-    pub fn prepend(&mut self, rest: Self) {
+    pub(crate) fn prepend(&mut self, rest: Self) {
         self.prepend_pipe(rest.pipe.content);
         self.prepend_plus(rest.plus.content);
     }

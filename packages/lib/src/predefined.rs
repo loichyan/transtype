@@ -1,15 +1,12 @@
-use crate::kw;
+use crate::{kw, NamedArg, Optional, TransformRest, TransformState};
 use proc_macro2::TokenStream;
 use syn::{
     parse::{Parse, ParseStream},
     DeriveInput, Result,
 };
-use transtype_lib::{NamedArg, Optional, TransformRest, TransformState};
 
-pub type PredefinedArgs = transtype_lib::PredefinedInput;
-
-pub fn expand(input: PredefinedInput) -> Result<TokenStream> {
-    let PredefinedInput { data, save, args } = input;
+pub fn expand(input: TokenStream) -> Result<TokenStream> {
+    let PredefinedInput { data, save, args } = syn::parse2(input)?;
     let PredefinedArgs { rest } = args.content;
     let mut rest = rest.content;
     if let Some(save) = save.content.into_inner() {
@@ -30,6 +27,18 @@ impl Parse for PredefinedInput {
             args: input.parse()?,
             data: input.parse()?,
             save: input.parse()?,
+        })
+    }
+}
+
+pub struct PredefinedArgs {
+    pub rest: NamedArg<kw::rest, TransformRest>,
+}
+
+impl Parse for PredefinedArgs {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(Self {
+            rest: input.parse()?,
         })
     }
 }

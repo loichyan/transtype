@@ -3,7 +3,10 @@ mod extend;
 mod select;
 mod wrap;
 
-use crate::{ExecuteOutput, Executor, PipeCommand, TransformRest, TransformState, Transformer};
+use crate::{
+    ExecuteOutput, Executor, PipeCommand, TransformInput, TransformRest, TransformState,
+    Transformer,
+};
 use ast::Nothing;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
@@ -31,10 +34,17 @@ impl Executor for DefaultExecutor {
     }
 }
 
+pub fn expand_builtin<T: Transformer>(input: TokenStream) -> TokenStream {
+    crate::expand(
+        |input| syn::parse2::<TransformInput<T>>(input)?.transform(),
+        input,
+    )
+}
+
 macro_rules! builtins {
     (
         $(#[$attr:meta])* enum $name:ident
-        { $($(#[$cmd_attr:meta])* $key:ident => $variant:ident;)* }
+        { $($key:ident => $variant:ident;)* }
     ) => {
         $(#[$attr])*
         enum $name { $($variant,)* }
@@ -55,24 +65,14 @@ macro_rules! builtins {
             }
         }
 
-        #[doc(hidden)]
-        #[macro_export]
-        macro_rules! define_builtins {
-            () => {
-                $(
-                    $(#[$cmd_attr])*
-                    #[proc_macro]
-                    pub fn $key(input: ::proc_macro::TokenStream) -> ::proc_macro::TokenStream {
-                        $crate::private::expand_builtin::<$crate::private::commands::$variant >(input.into()).into()
-                    }
-                )*
-
-            };
-        }
-
         pub mod commands {
             #[doc(inline)]
-            pub use super::{ $($variant,)* };
+            use proc_macro2::TokenStream;
+            $(
+                pub fn $key(input: TokenStream) -> TokenStream {
+                    super::expand_builtin::<super::$variant>(input)
+                }
+            )*
         }
     };
 }
@@ -80,8 +80,6 @@ macro_rules! builtins {
 builtins! {
     #[derive(Clone, Copy, Debug)]
     enum Builtin {
-        /// Consumes all rest tokens, generates a macro prefixes with `DEBUG_` which
-        /// returns the stringified tokens tree.
         debug       => Debug;
         extend      => Extend;
         finish      => Finish;
@@ -158,7 +156,7 @@ impl Transformer for Save {
         let rest = rest.take();
         Ok(TransformState::consume(quote!(macro_rules! #name {
             ($($args:tt)*) => {
-                ::transtype::predefined! {
+                ::transtype::__predefined! {
                     args={$($args)*}
                     data={#data}
                     save={#rest}
