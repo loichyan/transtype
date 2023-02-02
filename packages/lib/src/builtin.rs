@@ -35,10 +35,19 @@ impl Executor for DefaultExecutor {
 }
 
 pub fn expand_builtin<T: Transformer>(input: TokenStream) -> TokenStream {
+    if input.is_empty() {
+        return input;
+    }
     crate::expand(
         |input| syn::parse2::<TransformInput<T>>(input)?.transform(),
         input,
     )
+}
+
+pub fn track_builin(cmd: &PipeCommand, rest: &mut TransformRest) {
+    let path = cmd.path();
+    let span = rest.span();
+    rest.prepend_plus(quote_spanned!(span=> ::transtype::#path!{}));
 }
 
 macro_rules! builtins {
@@ -59,6 +68,7 @@ macro_rules! builtins {
                 data: DeriveInput,
                 rest: &mut TransformRest,
             ) -> Result<TransformState> {
+                track_builin(&cmd, rest);
                 match self {
                     $(Self::$variant => cmd.execute_as::<$variant>(data, rest),)*
                 }

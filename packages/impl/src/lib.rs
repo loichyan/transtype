@@ -34,6 +34,7 @@ expose_macros! {
 
     pub fn extend;
 
+    /// Consumes all rest tokens and returns.
     pub fn finish;
 
     pub fn rename;
