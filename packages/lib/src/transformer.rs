@@ -1,6 +1,6 @@
 use crate::{
     builtin, kw, ListOf, NamedArg, PipeCommand, TransformConsume, TransformDebug, TransformPipe,
-    TransformSave, TransformStart, TransformState,
+    TransformResume, TransformSave, TransformState,
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
@@ -160,130 +160,131 @@ impl TransformState {
         self.transform_with::<NoopExecutor>(rest)
     }
 
-    pub(crate) fn transform_with<T: Executor>(
-        self,
-        mut rest: TransformRest,
-    ) -> Result<TokenStream> {
-        let mut state = self;
-        Ok(loop {
-            let data = match state {
-                Self::Consume(TransformConsume { mut data }) => {
-                    if !rest.is_empty() {
-                        return Err(syn::Error::new(
-                            rest.span(),
-                            "a consume command should not be followed by other commands",
-                        ));
-                    }
-                    data.extend(rest.take_plus());
-                    data.extend(rest.take_mark());
-                    break data;
-                }
-                Self::Debug(TransformDebug { data, args }) => {
-                    let span = rest.span();
-                    let name = format_ident!("DEBUG_{}", data.ident, span = span);
-                    let rest = TransformRest {
-                        this: rest.this.clone(),
-                        pipe: rest.pipe.take(),
-                        plus: rest.plus.take(),
-                        mark: rest.mark.clone(),
-                    };
-                    let data = quote_spanned!(span=>
-                        data={#data}
-                        args={#args}
-                        rest={#rest}
-                    );
-                    let s = data.to_string();
-                    state = Self::consume(quote_spanned!(span=>
-                        macro_rules! #name {
-                            () => {{ #s }};
-                            (@$visit:path) => {
-                                $visit! { #data }
-                            };
-                        }
-                    ))
-                    .build();
-                    continue;
-                }
-                Self::Fork(_) => {
-                    todo!()
-                }
-                Self::Pipe(TransformPipe {
-                    data,
-                    pipe,
-                    plus,
-                    mark,
-                }) => {
-                    if let Some(pipe) = pipe {
-                        rest.prepend_pipe(pipe);
-                    }
-                    if let Some(plus) = plus {
-                        rest.append_plus(plus);
-                    }
-                    if let Some(mark) = mark {
-                        rest.append_mark(mark);
-                    }
-                    data
-                }
-                Self::Save(TransformSave { data, name }) => {
-                    let span = rest.span();
-                    let name = name.unwrap_or_else(|| data.ident.clone());
-                    let plus = rest.take_plus();
-                    state = Self::consume(quote_spanned!(span=>
-                        macro_rules! #name {
-                            ($($args:tt)*) => {
-                                ::transtype::__predefined! {
-                                    args={$($args)*}
-                                    data={#data}
-                                    plus={#plus}
-                                }
-                            };
-                        }
-                    ))
-                    .build();
-                    continue;
-                }
-                Self::Start(TransformStart { path, pipe }) => {
-                    rest.set_this(path.clone());
-                    if let Some(pipe) = pipe {
-                        rest.prepend_pipe(pipe);
-                    }
-                    let span = rest.span();
-                    break quote_spanned!(span=>
-                        #path! { rest={#rest} }
-                    );
-                }
-            };
-            match rest.next_pipe() {
-                Some(cmd) => {
-                    rest.set_this(cmd.path().clone());
-                    let output = match WithBuiltinExecutor::<T>::execute(cmd, data, &mut rest) {
-                        Ok(t) => t,
-                        Err(mut e) => {
-                            e.combine(syn::Error::new(
-                                rest.span(),
-                                "an error occurs in this command",
-                            ));
-                            return Err(e);
-                        }
-                    };
-                    match output {
-                        ExecuteState::Executed { state: s } => {
-                            state = s;
-                        }
-                        ExecuteState::Unsupported { cmd, data } => {
-                            break cmd.execute(data, rest);
-                        }
-                    }
-                }
-                None => {
+    pub(crate) fn transform_with<T: Executor>(self, rest: TransformRest) -> Result<TokenStream> {
+        transform_impl(self, rest, WithBuiltinExecutor::<T>::execute)
+    }
+}
+
+fn transform_impl(
+    mut state: TransformState,
+    mut rest: TransformRest,
+    execute: fn(PipeCommand, DeriveInput, &mut TransformRest) -> Result<ExecuteState>,
+) -> Result<TokenStream> {
+    type State = TransformState;
+
+    Ok(loop {
+        match state {
+            State::Consume(TransformConsume { mut data }) => {
+                if !rest.is_empty() {
                     return Err(syn::Error::new(
                         rest.span(),
-                        "a pipe command should be consumed",
+                        "a consume command should not be followed by other commands",
                     ));
                 }
+                data.extend(rest.take_plus());
+                data.extend(rest.take_mark());
+                break data;
             }
-        })
-    }
+            State::Debug(TransformDebug { data, args }) => {
+                let span = rest.span();
+                let name = format_ident!("DEBUG_{}", data.ident, span = span);
+                let rest = TransformRest {
+                    this: rest.this.clone(),
+                    pipe: rest.pipe.take(),
+                    plus: rest.plus.take(),
+                    mark: rest.mark.clone(),
+                };
+                let data = quote_spanned!(span=>
+                    data={#data}
+                    args={#args}
+                    rest={#rest}
+                );
+                let s = data.to_string();
+                state = State::consume(quote_spanned!(span=>
+                    macro_rules! #name {
+                        () => {{ #s }};
+                        (@$visit:path) => {
+                            $visit! { #data }
+                        };
+                    }
+                ))
+                .build();
+            }
+            State::Fork(_) => {
+                todo!()
+            }
+            State::Pipe(TransformPipe {
+                data,
+                pipe,
+                plus,
+                mark,
+            }) => {
+                if let Some(pipe) = pipe {
+                    rest.prepend_pipe(pipe);
+                }
+                if let Some(plus) = plus {
+                    rest.append_plus(plus);
+                }
+                if let Some(mark) = mark {
+                    rest.append_mark(mark);
+                }
+                match rest.next_pipe() {
+                    Some(cmd) => {
+                        rest.set_this(cmd.path().clone());
+                        let output = match execute(cmd, data, &mut rest) {
+                            Ok(t) => t,
+                            Err(mut e) => {
+                                e.combine(syn::Error::new(
+                                    rest.span(),
+                                    "an error occurs in this command",
+                                ));
+                                return Err(e);
+                            }
+                        };
+                        match output {
+                            ExecuteState::Executed { state: s } => state = s,
+                            ExecuteState::Unsupported { cmd, data } => {
+                                break cmd.execute(data, rest);
+                            }
+                        }
+                    }
+                    None => {
+                        return Err(syn::Error::new(
+                            rest.span(),
+                            "a pipe command should be consumed",
+                        ));
+                    }
+                }
+            }
+            State::Resume(TransformResume { path, pipe }) => {
+                rest.set_this(path.clone());
+                if let Some(pipe) = pipe {
+                    rest.prepend_pipe(pipe);
+                }
+                let span = rest.span();
+                break quote_spanned!(span=>
+                    #path! { rest={#rest} }
+                );
+            }
+            State::Save(TransformSave { data, name }) => {
+                let span = rest.span();
+                let name = name.unwrap_or_else(|| data.ident.clone());
+                let plus = rest.take_plus();
+                state = State::consume(quote_spanned!(span=>
+                    macro_rules! #name {
+                        ($($args:tt)*) => {
+                            ::transtype::__predefined! {
+                                args={$($args)*}
+                                data={#data}
+                                plus={#plus}
+                            }
+                        };
+                    }
+                ))
+                .build();
+            }
+        };
+    })
 }
 
 struct NoopExecutor;

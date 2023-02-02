@@ -35,10 +35,10 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
             }
             .build();
         }
-        TransformType::Start(ty) => {
+        TransformType::Resume(ty) => {
             rest = ty.rest.content;
-            let TransformStart { path, pipe, .. } = ty;
-            state = crate::TransformStart {
+            let TransformResume { path, pipe, .. } = ty;
+            state = crate::TransformResume {
                 path: path.content,
                 pipe: pipe.map(content),
             }
@@ -75,7 +75,7 @@ impl Parse for TransformInput {
                 parse_type!(
                     consume => Consume,
                     pipe    => Pipe,
-                    start   => Start,
+                    resume   => Resume,
                 )
             })()?,
         })
@@ -85,7 +85,7 @@ impl Parse for TransformInput {
 enum TransformType {
     Consume(TransformConsume),
     Pipe(TransformPipe),
-    Start(TransformStart),
+    Resume(TransformResume),
 }
 
 fn parse_optional<T: Parse>(
@@ -175,16 +175,16 @@ impl Parse for TransformPipe {
     }
 }
 
-struct TransformStart {
-    name: kw::start,
+struct TransformResume {
+    name: kw::resume,
     path: NamedArg<kw::path, Path>,
     pipe: OptNamedArg<kw::pipe, ListOf<PipeCommand>>,
     rest: NamedArg<kw::rest, TransformRest>,
 }
 
-impl Parse for TransformStart {
+impl Parse for TransformResume {
     fn parse(input: ParseStream) -> Result<Self> {
-        let name = input.parse::<kw::start>()?;
+        let name = input.parse::<kw::resume>()?;
         let span = name.span();
         parse_optional!(input => path, pipe, rest);
         assert_some!(span=> path, rest);

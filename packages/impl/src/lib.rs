@@ -45,6 +45,8 @@ expose_macros! {
 
     pub fn select_attr;
 
+    pub fn resume;
+
     pub fn wrap;
 
     pub fn wrapped;

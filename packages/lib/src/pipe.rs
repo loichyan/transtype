@@ -9,7 +9,7 @@ use syn::{
 
 pub fn expand(input: TokenStream) -> Result<TokenStream> {
     let PipeInput { path, pipe } = syn::parse2(input)?;
-    TransformState::start(path.clone())
+    TransformState::resume(path.clone())
         .pipe(pipe)
         .build()
         .transform(TransformRest::empty(path))

@@ -27,7 +27,7 @@ mod kw {
     custom_keyword!(pipe);
     custom_keyword!(plus);
     custom_keyword!(rest);
-    custom_keyword!(start);
+    custom_keyword!(resume);
     custom_keyword!(this);
 }
 
@@ -90,20 +90,20 @@ pub enum TransformState {
     /// ```
     Pipe(TransformPipe),
     /// ```
-    /// pipe! {
-    ///     -> save(#name)
-    /// }
-    /// ```
-    Save(TransformSave),
-    /// ```
     /// transform! {
-    ///     @start
+    ///     @resume
     ///     path={#path}
     ///     pipe={#pipe}
     ///     rest={#rest}
     /// }
     /// ```
-    Start(TransformStart),
+    Resume(TransformResume),
+    /// ```
+    /// pipe! {
+    ///     -> save(#name)
+    /// }
+    /// ```
+    Save(TransformSave),
 }
 
 impl TransformState {
@@ -134,17 +134,17 @@ impl TransformState {
         }
     }
 
+    pub fn resume(path: Path) -> TransformResume {
+        TransformResume {
+            path,
+            pipe: Default::default(),
+        }
+    }
+
     pub fn save(data: DeriveInput) -> TransformSave {
         TransformSave {
             data,
             name: Default::default(),
-        }
-    }
-
-    pub fn start(path: Path) -> TransformStart {
-        TransformStart {
-            path,
-            pipe: Default::default(),
         }
     }
 }
@@ -238,30 +238,12 @@ impl TransformPipe {
     }
 }
 
-pub struct TransformSave {
-    data: DeriveInput,
-    name: Option<Ident>,
-}
-
-impl TransformSave {
-    pub fn name(self, name: Ident) -> Self {
-        Self {
-            name: Some(name),
-            ..self
-        }
-    }
-
-    pub fn build(self) -> TransformState {
-        TransformState::Save(self)
-    }
-}
-
-pub struct TransformStart {
+pub struct TransformResume {
     path: Path,
     pipe: Option<ListOf<PipeCommand>>,
 }
 
-impl TransformStart {
+impl TransformResume {
     pub fn add_pipe(mut self, path: Path, args: TokenStream) -> Self {
         self.pipe
             .get_or_insert_with(Default::default)
@@ -277,6 +259,24 @@ impl TransformStart {
     }
 
     pub fn build(self) -> TransformState {
-        TransformState::Start(self)
+        TransformState::Resume(self)
+    }
+}
+
+pub struct TransformSave {
+    data: DeriveInput,
+    name: Option<Ident>,
+}
+
+impl TransformSave {
+    pub fn name(self, name: Ident) -> Self {
+        Self {
+            name: Some(name),
+            ..self
+        }
+    }
+
+    pub fn build(self) -> TransformState {
+        TransformState::Save(self)
     }
 }

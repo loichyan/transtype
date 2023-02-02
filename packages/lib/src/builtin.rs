@@ -12,7 +12,7 @@ use extend::Extend;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
 use select::{Select, SelectAttr};
-use syn::{DeriveInput, Ident, Result};
+use syn::{DeriveInput, Ident, Path, Result};
 use wrap::{Wrap, Wrapped};
 
 pub(crate) struct Executor;
@@ -84,6 +84,7 @@ builtins! {
         extend      => Extend;
         finish      => Finish;
         rename      => Rename;
+        resume      => Resume;
         save        => Save;
         select      => Select;
         select_attr => SelectAttr;
@@ -129,6 +130,20 @@ impl Transformer for Rename {
     ) -> Result<TransformState> {
         data.ident = name;
         Ok(TransformState::pipe(data).build())
+    }
+}
+
+pub(crate) struct Resume;
+
+impl Transformer for Resume {
+    type Args = Path;
+
+    fn transform(
+        _: DeriveInput,
+        args: Self::Args,
+        _: &mut TransformRest,
+    ) -> Result<TransformState> {
+        Ok(TransformState::resume(args).build())
     }
 }
 
