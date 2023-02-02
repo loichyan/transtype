@@ -83,11 +83,11 @@ pub struct NamedArg<K, V> {
     pub content: V,
 }
 
-impl<K, V> NamedArg<K, V>
-where
-    K: Default,
-{
-    pub fn new(content: V) -> Self {
+impl<K, V> NamedArg<K, V> {
+    pub fn new(content: V) -> Self
+    where
+        K: Default,
+    {
         Self {
             name: Default::default(),
             eq_token: Default::default(),
@@ -95,19 +95,29 @@ where
             content,
         }
     }
-}
 
-impl<K, V> NamedArg<K, V>
-where
-    K: Clone,
-    V: Default,
-{
-    pub fn take(&mut self) -> Self {
+    pub fn take(&mut self) -> Self
+    where
+        K: Clone,
+        V: Default,
+    {
         Self {
             name: self.name.clone(),
             eq_token: self.eq_token,
             brace_token: self.brace_token,
             content: std::mem::take(&mut self.content),
+        }
+    }
+
+    pub fn clone_with(&self, content: V) -> Self
+    where
+        K: Clone,
+    {
+        Self {
+            name: self.name.clone(),
+            eq_token: self.eq_token,
+            brace_token: self.brace_token,
+            content,
         }
     }
 }

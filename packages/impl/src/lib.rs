@@ -37,6 +37,8 @@ expose_macros! {
     /// Consumes all rest tokens and returns.
     pub fn finish;
 
+    pub fn fork;
+
     pub fn rename;
 
     pub fn save;

@@ -1,5 +1,6 @@
 mod builtin;
 mod define;
+mod fork;
 mod pipe;
 mod predefined;
 mod transform;
@@ -11,6 +12,7 @@ use syn::{DeriveInput, Ident, Path, Result};
 
 #[doc(inline)]
 pub use self::{
+    fork::ForkCommand,
     pipe::PipeCommand,
     transformer::{ExecuteState, Executor, TransformInput, TransformRest, Transformer},
     utils::{ListOf, NamedArg, Optional},
@@ -179,17 +181,15 @@ impl TransformDebug {
 
 pub struct TransformFork {
     data: DeriveInput,
-    fork: ListOf<()>,
+    fork: Option<ListOf<ForkCommand>>,
 }
 
 impl TransformFork {
-    pub fn add_fork(mut self, fork: ()) -> Self {
-        self.fork.push(fork);
-        self
-    }
-
-    pub fn fork(self, fork: ListOf<()>) -> Self {
-        Self { fork, ..self }
+    pub fn fork(self, fork: ListOf<ForkCommand>) -> Self {
+        Self {
+            fork: Some(fork),
+            ..self
+        }
     }
 
     pub fn build(self) -> TransformState {
@@ -205,13 +205,6 @@ pub struct TransformPipe {
 }
 
 impl TransformPipe {
-    pub fn add_pipe(mut self, path: Path, args: TokenStream) -> Self {
-        self.pipe
-            .get_or_insert_with(Default::default)
-            .push((path, args).into());
-        self
-    }
-
     pub fn pipe(self, pipe: ListOf<PipeCommand>) -> Self {
         Self {
             pipe: Some(pipe),
@@ -244,13 +237,6 @@ pub struct TransformResume {
 }
 
 impl TransformResume {
-    pub fn add_pipe(mut self, path: Path, args: TokenStream) -> Self {
-        self.pipe
-            .get_or_insert_with(Default::default)
-            .push((path, args).into());
-        self
-    }
-
     pub fn pipe(self, pipe: ListOf<PipeCommand>) -> Self {
         Self {
             pipe: Some(pipe),

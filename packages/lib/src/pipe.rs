@@ -29,6 +29,7 @@ impl Parse for PipeInput {
     }
 }
 
+#[derive(Clone)]
 pub struct PipeCommand {
     r_arrow_token: Token![->],
     path: Path,
@@ -37,15 +38,6 @@ pub struct PipeCommand {
 }
 
 impl PipeCommand {
-    pub fn new(path: Path, args: TokenStream) -> Self {
-        Self {
-            r_arrow_token: Default::default(),
-            path,
-            paren_token: Default::default(),
-            args,
-        }
-    }
-
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -68,12 +60,6 @@ impl PipeCommand {
                 rest={#rest}
             }
         )
-    }
-}
-
-impl From<(Path, TokenStream)> for PipeCommand {
-    fn from((path, args): (Path, TokenStream)) -> Self {
-        Self::new(path, args)
     }
 }
 

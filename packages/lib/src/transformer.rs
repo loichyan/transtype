@@ -1,6 +1,6 @@
 use crate::{
-    builtin, kw, ListOf, NamedArg, PipeCommand, TransformConsume, TransformDebug, TransformPipe,
-    TransformResume, TransformSave, TransformState,
+    builtin, kw, ForkCommand, ListOf, NamedArg, PipeCommand, TransformConsume, TransformDebug,
+    TransformFork, TransformPipe, TransformResume, TransformSave, TransformState,
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
@@ -126,6 +126,16 @@ impl TransformRest {
         self.plus.content.extend(plus);
     }
 
+    fn fork(&self, mut pipe: ListOf<PipeCommand>) -> Self {
+        pipe.reverse();
+        Self {
+            this: self.this.clone(),
+            pipe: self.pipe.clone_with(pipe),
+            plus: self.plus.clone(),
+            mark: self.mark.clone(),
+        }
+    }
+
     fn take_plus(&mut self) -> TokenStream {
         std::mem::take(&mut self.plus.content)
     }
@@ -210,8 +220,19 @@ fn transform_impl(
                 ))
                 .build();
             }
-            State::Fork(_) => {
-                todo!()
+            State::Fork(TransformFork { data, fork }) => {
+                if let Some(fork) = fork {
+                    let mut tokens = TokenStream::default();
+                    for ForkCommand(fork) in fork {
+                        let mut data = data.clone();
+                        data.ident = fork.name;
+                        let rest = rest.fork(fork.content);
+                        tokens.extend(transform_impl(State::pipe(data).build(), rest, execute)?);
+                    }
+                    state = State::consume(tokens).build();
+                } else {
+                    state = State::consume(data.into_token_stream()).build();
+                }
             }
             State::Pipe(TransformPipe {
                 data,
@@ -268,7 +289,7 @@ fn transform_impl(
             }
             State::Save(TransformSave { data, name }) => {
                 let span = rest.span();
-                let name = name.unwrap_or_else(|| data.ident.clone());
+                let name = name.as_ref().unwrap_or(&data.ident);
                 let plus = rest.take_plus();
                 state = State::consume(quote_spanned!(span=>
                     macro_rules! #name {

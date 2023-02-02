@@ -1,5 +1,4 @@
 use crate::{TransformRest, TransformState, Transformer};
-use quote::quote_spanned;
 use syn::{
     parse::{Parse, ParseStream},
     parse_quote_spanned, token, Data, DeriveInput, Fields, Path, Result, Token,
@@ -18,10 +17,9 @@ impl Transformer for Extend {
         let span = rest.span();
         Ok(match args {
             ExtendArgs::Path(path) => TransformState::resume(path)
-                .add_pipe(
-                    parse_quote_spanned!(span=> extend),
-                    quote_spanned!(span=> as #data),
-                )
+                .pipe(parse_quote_spanned!(span=>
+                    -> extend(as #data)
+                ))
                 .build(),
             ExtendArgs::As(ExtendAs { data: mut dest, .. }) => {
                 match (&mut dest.data, data.data) {

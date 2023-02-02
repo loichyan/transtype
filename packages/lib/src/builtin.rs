@@ -1,11 +1,11 @@
 mod ast;
 mod extend;
-mod fork;
 mod select;
 mod wrap;
 
 use crate::{
-    ExecuteState, Optional, PipeCommand, TransformInput, TransformRest, TransformState, Transformer,
+    ExecuteState, ForkCommand, ListOf, Optional, PipeCommand, TransformInput, TransformRest,
+    TransformState, Transformer,
 };
 use ast::Nothing;
 use extend::Extend;
@@ -83,6 +83,7 @@ builtins! {
         debug       => Debug;
         extend      => Extend;
         finish      => Finish;
+        fork        => Fork;
         rename      => Rename;
         resume      => Resume;
         save        => Save;
@@ -162,6 +163,20 @@ impl Transformer for Save {
             name: name.into_inner(),
         }
         .build())
+    }
+}
+
+pub(crate) struct Fork;
+
+impl Transformer for Fork {
+    type Args = ListOf<ForkCommand>;
+
+    fn transform(
+        data: DeriveInput,
+        args: Self::Args,
+        _: &mut TransformRest,
+    ) -> Result<TransformState> {
+        Ok(TransformState::fork(data).fork(args).build())
     }
 }
 
