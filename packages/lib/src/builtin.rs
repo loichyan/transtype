@@ -3,6 +3,8 @@ mod extend;
 mod select;
 mod wrap;
 
+use std::marker::PhantomData;
+
 use crate::{
     ExecuteOutput, Executor, PipeCommand, TransformInput, TransformRest, TransformState,
     Transformer,
@@ -34,20 +36,36 @@ impl Executor for DefaultExecutor {
     }
 }
 
-pub fn expand_builtin<T: Transformer>(input: TokenStream) -> TokenStream {
+struct TrackBuiltin<T>(PhantomData<T>);
+
+impl<T: BultinCommand> Transformer for TrackBuiltin<T> {
+    type Args = T::Args;
+
+    fn transform(
+        data: DeriveInput,
+        args: Self::Args,
+        rest: &mut TransformRest,
+    ) -> Result<TransformState> {
+        let span = rest.span();
+        let name = Ident::new(T::NAME, span);
+        let output = T::transform(data, args, rest)?;
+        rest.prepend_plus(quote_spanned!(span=> ::transtype::#name!{}));
+        Ok(output)
+    }
+}
+
+trait BultinCommand: Transformer {
+    const NAME: &'static str;
+}
+
+fn expand_builtin<T: BultinCommand>(input: TokenStream) -> TokenStream {
     if input.is_empty() {
         return input;
     }
     crate::expand(
-        |input| syn::parse2::<TransformInput<T>>(input)?.transform(),
+        |input| syn::parse2::<TransformInput<TrackBuiltin<T>>>(input)?.transform(),
         input,
     )
-}
-
-pub fn track_builin(cmd: &PipeCommand, rest: &mut TransformRest) {
-    let path = cmd.path();
-    let span = rest.span();
-    rest.prepend_plus(quote_spanned!(span=> ::transtype::#path!{}));
 }
 
 macro_rules! builtins {
@@ -58,9 +76,13 @@ macro_rules! builtins {
         $(#[$attr])*
         enum $name { $($variant,)* }
 
+        $(impl BultinCommand for $variant {
+            const NAME: &'static str = stringify!($key);
+        })*
+
         impl $name {
             const ALL: &'static [(&'static str, $name)] =
-                &[$((stringify!($key), $name::$variant),)*];
+                &[$(($variant::NAME, $name::$variant),)*];
 
             pub fn execute(
                 &self,
@@ -68,9 +90,9 @@ macro_rules! builtins {
                 data: DeriveInput,
                 rest: &mut TransformRest,
             ) -> Result<TransformState> {
-                track_builin(&cmd, rest);
                 match self {
-                    $(Self::$variant => cmd.execute_as::<$variant>(data, rest),)*
+                    $(Self::$variant =>
+                        cmd.execute_as::<TrackBuiltin<$variant>>(data, rest),)*
                 }
             }
         }
