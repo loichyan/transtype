@@ -63,10 +63,7 @@ macro_rules! builtins {
                     $(#[$cmd_attr])*
                     #[proc_macro]
                     pub fn $key(input: ::proc_macro::TokenStream) -> ::proc_macro::TokenStream {
-                        $crate::private::expand_builtin::<
-                            $crate::private::commands::$variant,
-                            ::proc_macro::TokenStream,
-                        >(input)
+                        $crate::private::expand_builtin::<$crate::private::commands::$variant >(input.into()).into()
                     }
                 )*
 

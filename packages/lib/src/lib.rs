@@ -29,10 +29,9 @@ pub mod private {
     #[doc(inline)]
     pub use crate::builtin::commands;
 
-    pub fn expand_builtin<T: Transformer, I: From<TokenStream> + Into<TokenStream>>(input: I) -> I {
-        (|| syn::parse2::<TransformInput<T>>(input.into())?.transform())()
+    pub fn expand_builtin<T: Transformer>(input: TokenStream) -> TokenStream {
+        (|| syn::parse2::<TransformInput<T>>(input)?.transform())()
             .unwrap_or_else(syn::Error::into_compile_error)
-            .into()
     }
 }
 
@@ -125,7 +124,10 @@ impl TransformState {
             let data = match state {
                 TransformState::Consume { data } => {
                     if !rest.is_empty() {
-                        return Err(syn::Error::new(span, "all rest pipes should be consumed"));
+                        return Err(syn::Error::new(
+                            span,
+                            "a consume command should not be followed by other commands",
+                        ));
                     }
                     let mut data = data.unwrap_or_default();
                     data.extend(rest.take_plus());
@@ -154,7 +156,7 @@ impl TransformState {
             };
             match rest.next_pipe() {
                 Some(cmd) => {
-                    span = cmd.span();
+                    span = cmd.path().span();
                     match T::execute(cmd, data, &mut rest)? {
                         ExecuteOutput::Executed { state: s } => {
                             state = s;
@@ -165,7 +167,7 @@ impl TransformState {
                     }
                 }
                 None => {
-                    return Err(syn::Error::new(span, "all piped tokens should be consumed"));
+                    return Err(syn::Error::new(span, "a pipe command should be consumed"));
                 }
             }
         })

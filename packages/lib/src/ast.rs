@@ -66,9 +66,10 @@ impl TransformRest {
     }
 
     pub fn take(&mut self) -> Self {
+        let pipe = self.pipe.take();
         Self {
-            pipe: self.pipe.take(),
             plus: self.plus.take(),
+            pipe: std::mem::replace(&mut self.pipe, pipe),
         }
     }
 
@@ -138,8 +139,8 @@ impl PipeCommand {
         data: DeriveInput,
         rest: &mut TransformRest,
     ) -> Result<TransformState> {
-        let span = self.span();
-        T::transform(data, syn::parse2(self.args)?, rest).map_err(|mut e| {
+        let span = self.path.span();
+        (|| T::transform(data, syn::parse2(self.args)?, rest))().map_err(|mut e| {
             e.combine(syn::Error::new(span, "an error occurs in this command"));
             e
         })
