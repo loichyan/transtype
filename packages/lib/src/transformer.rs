@@ -1,6 +1,6 @@
 use crate::{
-    builtin, kw, ForkCommand, ListOf, NamedArg, PipeCommand, TransformConsume, TransformDebug,
-    TransformFork, TransformPipe, TransformResume, TransformSave, TransformState,
+    builtin, kw, state, transform::StateHook, ForkCommand, ListOf, NamedArg, PipeCommand,
+    TransformState,
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
@@ -116,6 +116,23 @@ impl TransformRest {
         self.pipe.content.pop()
     }
 
+    fn hook(&mut self, hook: StateHook) {
+        let StateHook {
+            pipe,
+            extra,
+            marker,
+        } = hook;
+        if let Some(pipe) = pipe {
+            self.prepend_pipe(pipe);
+        }
+        if let Some(extra) = extra {
+            self.append_extra(extra);
+        }
+        if let Some(marker) = marker {
+            self.append_mark(marker);
+        }
+    }
+
     fn prepend_pipe(&mut self, pipe: ListOf<PipeCommand>) {
         self.pipe
             .content
@@ -176,17 +193,18 @@ impl TransformState {
 }
 
 // TODO: put `marker` to the output when error occurs
-// TODO: add `hook` allows hook rest content
 fn transform_impl(
     mut state: TransformState,
     mut rest: TransformRest,
     execute: fn(PipeCommand, DeriveInput, &mut TransformRest) -> Result<ExecuteState>,
 ) -> Result<TokenStream> {
     type State = TransformState;
+    type Ty = crate::state::Type;
 
     Ok(loop {
-        match state {
-            State::Consume(TransformConsume { mut data }) => {
+        match state.0 {
+            Ty::Consume(state::Consume { mut data, hook }) => {
+                rest.hook(hook);
                 if !rest.is_empty() {
                     return Err(syn::Error::new(
                         rest.span(),
@@ -197,7 +215,8 @@ fn transform_impl(
                 data.extend(rest.take_mark());
                 break data;
             }
-            State::Debug(TransformDebug { data, args }) => {
+            Ty::Debug(state::Debug { data, args, hook }) => {
+                rest.hook(hook);
                 let span = rest.span();
                 let name = format_ident!("DEBUG_{}", data.ident, span = span);
                 let rest = TransformRest {
@@ -222,7 +241,8 @@ fn transform_impl(
                 ))
                 .build();
             }
-            State::Fork(TransformFork { data, fork }) => {
+            Ty::Fork(state::Fork { data, fork, hook }) => {
+                rest.hook(hook);
                 if let Some(fork) = fork {
                     let mut tokens = TokenStream::default();
                     for ForkCommand(fork) in fork {
@@ -236,21 +256,8 @@ fn transform_impl(
                     state = State::consume(data.into_token_stream()).build();
                 }
             }
-            State::Pipe(TransformPipe {
-                data,
-                pipe,
-                extra,
-                marker,
-            }) => {
-                if let Some(pipe) = pipe {
-                    rest.prepend_pipe(pipe);
-                }
-                if let Some(extra) = extra {
-                    rest.append_extra(extra);
-                }
-                if let Some(marker) = marker {
-                    rest.append_mark(marker);
-                }
+            Ty::Pipe(state::Pipe { data, hook }) => {
+                rest.hook(hook);
                 match rest.next_pipe() {
                     Some(cmd) => {
                         rest.set_this(cmd.path().clone());
@@ -279,19 +286,18 @@ fn transform_impl(
                     }
                 }
             }
-            State::Resume(TransformResume { path, pipe }) => {
+            Ty::Resume(state::Resume { path, hook }) => {
+                rest.hook(hook);
                 rest.set_this(path.clone());
-                if let Some(pipe) = pipe {
-                    rest.prepend_pipe(pipe);
-                }
                 let span = rest.span();
                 break quote_spanned!(span=>
                     #path! { rest={#rest} }
                 );
             }
-            State::Save(TransformSave { data, name }) => {
+            Ty::Save(state::Save { data, hook }) => {
+                rest.hook(hook);
                 let span = rest.span();
-                let name = name.as_ref().unwrap_or(&data.ident);
+                let name = &data.ident;
                 let extra = rest.take_extra();
                 state = State::consume(quote_spanned!(span=>
                     macro_rules! #name {

@@ -190,3 +190,30 @@ impl<T: ToTokens> ToTokens for Optional<T> {
         }
     }
 }
+
+#[macro_export]
+macro_rules! parse_named_args {
+    ($input:expr, $kw:ident => $($name:ident),* $(,)?) => {
+        let __input = $input;
+        $(let mut $name = None;)*
+        loop {
+            if __input.is_empty() {
+                break;
+            }
+            let lookahead = __input.lookahead1();
+            $(if lookahead.peek($kw::$name) {
+                $crate::private::parse_named_arg(stringify!($name), &mut $name, __input)?;
+                continue;
+            })*
+            return Err(lookahead.error());
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! require_named_args {
+    ($span:expr => $($name:ident),* $(,)?) => {
+        let __span = $span;
+        $(let $name = $crate::private::require_named_arg(stringify!($name), $name, __span)?;)*
+    };
+}

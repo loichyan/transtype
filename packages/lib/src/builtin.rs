@@ -4,8 +4,8 @@ mod select;
 mod wrap;
 
 use crate::{
-    ExecuteState, ForkCommand, ListOf, Optional, PipeCommand, TransformInput, TransformRest,
-    TransformState, Transformer,
+    ExecuteState, ForkCommand, ListOf, PipeCommand, TransformInput, TransformRest, TransformState,
+    Transformer,
 };
 use ast::Nothing;
 use extend::Extend;
@@ -151,18 +151,14 @@ impl Transformer for Resume {
 pub(crate) struct Save;
 
 impl Transformer for Save {
-    type Args = Optional<Ident>;
+    type Args = Nothing;
 
     fn transform(
         data: DeriveInput,
-        name: Self::Args,
+        _: Self::Args,
         _: &mut TransformRest,
     ) -> Result<TransformState> {
-        Ok(crate::TransformSave {
-            data,
-            name: name.into_inner(),
-        }
-        .build())
+        Ok(TransformState::save(data).build())
     }
 }
 

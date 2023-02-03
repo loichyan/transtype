@@ -2,6 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote_spanned;
 use syn::{spanned::Spanned, DeriveInput, Result};
 
+// TODO: state::Save
 pub fn expand(input: TokenStream) -> Result<TokenStream> {
     let data = syn::parse2::<DeriveInput>(input)?;
     let span = data.span();

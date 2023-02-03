@@ -53,6 +53,7 @@ impl PipeCommand {
     pub(crate) fn execute(self, data: DeriveInput, rest: TransformRest) -> TokenStream {
         let span = rest.span();
         let PipeCommand { path, args, .. } = self;
+        // TODO: state::Execute
         quote_spanned!(span=>
             #path! {
                 data={#data}

@@ -1,7 +1,5 @@
-#![allow(dead_code)]
-
-use crate::{kw, transformer::TransformRest, ListOf, NamedArg, PipeCommand};
-use proc_macro2::{Span, TokenStream};
+use crate::{kw, transformer::TransformRest, ForkCommand, ListOf, NamedArg, PipeCommand};
+use proc_macro2::TokenStream;
 use syn::{
     parse::{Parse, ParseStream},
     spanned::Spanned,
@@ -10,189 +8,267 @@ use syn::{
 
 pub fn expand(input: TokenStream) -> Result<TokenStream> {
     let input = syn::parse2::<TransformInput>(input)?;
-    let state;
-    let rest;
-    match input.ty {
-        TransformType::Consume(ty) => {
-            rest = ty.rest.content;
-            let TransformConsume { data, .. } = ty;
-            state = crate::TransformConsume { data: data.content }.build();
-        }
-        TransformType::Pipe(ty) => {
-            rest = ty.rest.content;
-            let TransformPipe {
-                data,
-                pipe,
-                extra,
-                marker,
-                ..
-            } = ty;
-            state = crate::TransformPipe {
-                data: data.content,
-                pipe: pipe.map(content),
-                extra: extra.map(content),
-                marker: marker.map(content),
-            }
-            .build();
-        }
-        TransformType::Resume(ty) => {
-            rest = ty.rest.content;
-            let TransformResume { path, pipe, .. } = ty;
-            state = crate::TransformResume {
-                path: path.content,
-                pipe: pipe.map(content),
-            }
-            .build();
-        }
-    }
-    state.transform(rest)
+    let (state, rest) = input.ty.build();
+    TransformState(state).transform(rest)
 }
 
 fn content<K, V>(t: NamedArg<K, V>) -> V {
     t.content
 }
 
+#[allow(dead_code)]
 struct TransformInput {
     at_token: Token![@],
-    ty: TransformType,
+    ty: ast::Type,
 }
 
 impl Parse for TransformInput {
     fn parse(input: ParseStream) -> Result<Self> {
-        macro_rules! parse_type {
-            ($($key:ident => $ty:ident,)*) => {{
-                let lookahead = input.lookahead1();
-                $(if lookahead.peek(kw::$key) {
-                    return input.parse().map(TransformType::$ty);
-                })*
-                return Err(lookahead.error());
-            }};
-        }
-
         Ok(Self {
             at_token: input.parse()?,
-            ty: (|| {
-                parse_type!(
-                    consume => Consume,
-                    pipe    => Pipe,
-                    resume   => Resume,
-                )
-            })()?,
+            ty: input.parse()?,
         })
     }
 }
 
-enum TransformType {
-    Consume(TransformConsume),
-    Pipe(TransformPipe),
-    Resume(TransformResume),
-}
+pub struct TransformState(pub(crate) state::Type);
 
-fn parse_optional<T: Parse>(
-    input: ParseStream,
-    arg: &mut Option<T>,
-    name: &'static str,
-) -> Result<()> {
-    if arg.is_some() {
-        return Err(syn::Error::new(
-            input.span(),
-            format!("duplicated argument '{name}'"),
-        ));
+impl From<state::Type> for TransformState {
+    fn from(value: state::Type) -> Self {
+        Self(value)
     }
-    *arg = Some(input.parse()?);
-    Ok(())
-}
-
-fn assert_some<T>(value: Option<T>, span: Span, name: &'static str) -> Result<T> {
-    value.ok_or_else(|| syn::Error::new(span, format!("argument '{name}' must be specified")))
-}
-
-macro_rules! parse_optional {
-    ($input:expr => $($name:ident),* $(,)?) => {
-        let input = $input;
-        $(let mut $name = None;)*
-        loop {
-            if input.is_empty() {
-                break;
-            }
-            let lookahead = input.lookahead1();
-            $(if lookahead.peek(kw::$name) {
-                parse_optional(input, &mut $name, stringify!($name))?;
-                continue;
-            })*
-            return Err(lookahead.error());
-        }
-    };
-}
-
-macro_rules! assert_some {
-    ($span:expr => $($name:ident),* $(,)?) => {
-        $(let $name = assert_some($name, $span, stringify!($name))?;)*
-    };
 }
 
 type OptNamedArg<K, V> = Option<NamedArg<K, V>>;
 
-struct TransformConsume {
-    name: kw::consume,
-    data: NamedArg<kw::data, TokenStream>,
-    rest: NamedArg<kw::rest, TransformRest>,
+macro_rules! define_hook {
+    ($(+$f_name:ident: $f_ty:ty,)*) => {
+        pub(crate) struct StateHook {
+            $(pub $f_name: Option<$f_ty>,)*
+        }
+
+        impl StateHook {
+            pub fn new() -> Self {
+                Self { $($f_name: None,)* }
+            }
+        }
+
+        struct AstHook {
+            $($f_name: OptNamedArg<kw::$f_name, $f_ty>,)*
+        }
+
+        impl AstHook {
+            pub fn build(self) -> StateHook {
+                StateHook { $($f_name: self.$f_name.map(content),)* }
+            }
+        }
+    };
 }
 
-impl Parse for TransformConsume {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let name = input.parse::<kw::consume>()?;
-        let span = name.span();
-        parse_optional!(input => data, rest);
-        assert_some!(span=> data, rest);
-        Ok(Self { name, data, rest })
-    }
+define_hook! {
+    +pipe: ListOf<PipeCommand>,
+    +extra: TokenStream,
+    +marker: TokenStream,
 }
 
-struct TransformPipe {
-    name: kw::pipe,
-    data: NamedArg<kw::data, DeriveInput>,
-    pipe: OptNamedArg<kw::pipe, ListOf<PipeCommand>>,
-    extra: OptNamedArg<kw::extra, TokenStream>,
-    marker: OptNamedArg<kw::marker, TokenStream>,
-    rest: NamedArg<kw::rest, TransformRest>,
+macro_rules! define_types {
+    (enum $name:ident {$(
+        $(#[$attr:meta])*
+        $key:ident => $variant:ident { $($body:tt)* },
+    )*}) => {
+        define_types! {
+            @inner
+            enum $name {
+                $($(#[$attr])* $key => $variant {
+                    $($body)*
+                    +pipe: ListOf<PipeCommand>,
+                    +extra: TokenStream,
+                    +marker: TokenStream,
+                },)*
+            }
+        }
+    };
+    (@inner enum $name:ident {$(
+        $(#[$attr:meta])*
+        $key:ident => $variant:ident {
+            $(!$f1_name:ident: $f1_ty:ty,)*
+            $(?$f2_name:ident: $f2_ty:ty,)*
+            $(+$f3_name:ident: $f3_ty:ty,)*
+        },
+    )*}) => {
+        pub mod state {
+            use super::*;
+
+            pub(crate) enum $name {
+                $($variant($variant),)*
+            }
+
+
+            $(pub struct $variant {
+                pub(crate) hook: StateHook,
+                $(pub(crate) $f1_name: $f1_ty,)*
+                $(pub(crate) $f2_name: Option<$f2_ty>,)*
+            }
+
+            impl TransformState {
+                $(#[$attr])*
+                pub fn $key($($f1_name: $f1_ty,)*) -> $variant {
+                    $variant {
+                        hook: StateHook::new(),
+                        $($f1_name,)*
+                        $($f2_name: None,)*
+                    }
+                }
+            }
+
+            impl $variant {
+                $(pub fn $f2_name(self, $f2_name: $f2_ty) -> Self {
+                    Self {
+                        $f2_name: Some($f2_name),
+                        ..self
+                    }
+                })*
+
+                $(pub fn $f3_name(self, $f3_name: $f3_ty) -> Self {
+                    Self {
+                        hook: StateHook {
+                            $f3_name: Some($f3_name),
+                            ..self.hook
+                        },
+                        ..self
+                    }
+                })*
+
+                pub fn build(self) -> TransformState {
+                    $name::$variant(self).into()
+                }
+            })*
+        }
+
+        mod ast {
+            use super:: *;
+
+            pub(crate) enum $name {
+                $($variant($variant),)*
+            }
+
+            impl Parse for $name {
+                fn parse(input: ParseStream) -> Result<Self> {
+                    let lookahead = input.lookahead1();
+                    $(if lookahead.peek(kw::$key) {
+                        return input.parse().map(Self::$variant);
+                    })*
+                    Err(lookahead.error())
+                }
+            }
+
+            impl $name {
+                pub fn build(self) -> (state::$name, TransformRest) {
+                    match self {$(
+                        Self::$variant(t) => (
+                            state::$name::$variant(state::$variant {
+                                hook: t.hook.build(),
+                                $($f1_name: t.$f1_name.content,)*
+                                $($f2_name: t.$f2_name.map(content),)*
+                            }),
+                            t.rest.content,
+                        ),
+                    )*}
+                }
+            }
+
+            $(#[allow(dead_code)]
+            pub(crate) struct $variant {
+                name: kw::$key,
+                rest: NamedArg<kw::rest, TransformRest>,
+                hook: AstHook,
+                $($f1_name: NamedArg<kw::$f1_name, $f1_ty>,)*
+                $($f2_name: OptNamedArg<kw::$f2_name, $f2_ty>,)*
+            }
+
+            impl Parse for $variant {
+                fn parse(input: ParseStream) -> Result<Self> {
+                    let name = input.parse::<kw::$key>()?;
+                    let _span = name.span();
+                    parse_named_args!(input, kw => rest, $($f1_name,)* $($f2_name,)* $($f3_name,)*);
+                    require_named_args!(_span => rest, $($f1_name,)*);
+                    Ok(Self {
+                        name,
+                        rest,
+                        hook: AstHook { $($f3_name,)* },
+                        $($f1_name,)*
+                        $($f2_name,)*
+                    })
+                }
+            })*
+        }
+    };
 }
 
-impl Parse for TransformPipe {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let name = input.parse::<kw::pipe>()?;
-        let span = name.span();
-        parse_optional!(input => data, pipe, extra, marker, rest);
-        assert_some!(span=> data, rest);
-        Ok(Self {
-            name,
-            data,
-            pipe,
-            extra,
-            marker,
-            rest,
-        })
-    }
-}
-
-struct TransformResume {
-    name: kw::resume,
-    path: NamedArg<kw::path, Path>,
-    pipe: OptNamedArg<kw::pipe, ListOf<PipeCommand>>,
-    rest: NamedArg<kw::rest, TransformRest>,
-}
-
-impl Parse for TransformResume {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let name = input.parse::<kw::resume>()?;
-        let span = name.span();
-        parse_optional!(input => path, pipe, rest);
-        assert_some!(span=> path, rest);
-        Ok(Self {
-            name,
-            path,
-            pipe,
-            rest,
-        })
+define_types! {
+    enum Type {
+        /// ```
+        /// transform! {
+        ///     @consume
+        ///     data={#data}
+        ///     ...
+        /// }
+        /// ```
+        consume => Consume {
+            !data: TokenStream,
+        },
+        /// ```
+        /// transform! {
+        ///     @debug
+        ///     data={#data}
+        ///     args={#args}
+        ///     ...
+        /// }
+        /// ```
+        debug => Debug {
+            !data: DeriveInput,
+            ?args: TokenStream,
+        },
+        /// ```
+        /// transform! {
+        ///     @fork
+        ///     data={#data}
+        ///     fork={#fork}
+        ///     ...
+        /// }
+        /// ```
+        fork => Fork {
+            !data: DeriveInput,
+            ?fork: ListOf<ForkCommand>,
+        },
+        /// ```
+        /// transform! {
+        ///     @pipe
+        ///     data={#data}
+        ///     ...
+        /// }
+        /// ```
+        pipe => Pipe {
+            !data: DeriveInput,
+        },
+        /// ```
+        /// transform! {
+        ///     @resume
+        ///     path={#path}
+        ///     ...
+        /// }
+        /// ```
+        resume => Resume {
+            !path: Path,
+        },
+        /// ```
+        /// transform! {
+        ///     @save
+        ///     ...
+        /// }
+        /// ```
+        save => Save {
+            !data: DeriveInput,
+        },
     }
 }
