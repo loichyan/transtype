@@ -1,21 +1,16 @@
+use crate::{state, TransformRest};
 use proc_macro2::TokenStream;
-use quote::quote_spanned;
-use syn::{spanned::Spanned, DeriveInput, Result};
+use syn::{parse_quote_spanned, spanned::Spanned, DeriveInput, Result};
 
-// TODO: state::Save
 pub fn expand(input: TokenStream) -> Result<TokenStream> {
     let data = syn::parse2::<DeriveInput>(input)?;
     let span = data.span();
     let name = &data.ident;
-    Ok(quote_spanned!(span=>
-        macro_rules! #name {
-            ($($args:tt)*) => {
-                ::transtype::__predefined! {
-                    args={$($args)*}
-                    data={#data}
-                    extra={}
-                }
-            };
-        }
-    ))
+    let path = parse_quote_spanned!(span=> #name);
+    state::Save {
+        data,
+        hook: Default::default(),
+    }
+    .build()
+    .transform(TransformRest::empty(path))
 }

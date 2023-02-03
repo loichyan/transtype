@@ -1,6 +1,6 @@
 use crate::{ListOf, TransformRest, TransformState, Transformer};
 use proc_macro2::TokenStream;
-use quote::{quote_spanned, ToTokens};
+use quote::ToTokens;
 use syn::{
     parenthesized,
     parse::{Parse, ParseStream},
@@ -31,10 +31,10 @@ impl Parse for PipeInput {
 
 #[derive(Clone)]
 pub struct PipeCommand {
-    r_arrow_token: Token![->],
-    path: Path,
-    paren_token: token::Paren,
-    args: TokenStream,
+    pub(crate) r_arrow_token: Token![->],
+    pub(crate) path: Path,
+    pub(crate) paren_token: token::Paren,
+    pub(crate) args: TokenStream,
 }
 
 impl PipeCommand {
@@ -48,19 +48,6 @@ impl PipeCommand {
         rest: &mut TransformRest,
     ) -> Result<TransformState> {
         T::transform(data, syn::parse2(self.args)?, rest)
-    }
-
-    pub(crate) fn execute(self, data: DeriveInput, rest: TransformRest) -> TokenStream {
-        let span = rest.span();
-        let PipeCommand { path, args, .. } = self;
-        // TODO: state::Execute
-        quote_spanned!(span=>
-            #path! {
-                data={#data}
-                args={#args}
-                rest={#rest}
-            }
-        )
     }
 }
 

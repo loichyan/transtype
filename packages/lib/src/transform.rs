@@ -43,14 +43,9 @@ type OptNamedArg<K, V> = Option<NamedArg<K, V>>;
 
 macro_rules! define_hook {
     ($(+$f_name:ident: $f_ty:ty,)*) => {
+        #[derive(Default)]
         pub(crate) struct StateHook {
             $(pub $f_name: Option<$f_ty>,)*
-        }
-
-        impl StateHook {
-            pub fn new() -> Self {
-                Self { $($f_name: None,)* }
-            }
         }
 
         struct AstHook {
@@ -114,7 +109,7 @@ macro_rules! define_types {
                 $(#[$attr])*
                 pub fn $key($($f1_name: $f1_ty,)*) -> $variant {
                     $variant {
-                        hook: StateHook::new(),
+                        hook: StateHook::default(),
                         $($f1_name,)*
                         $($f2_name: None,)*
                     }

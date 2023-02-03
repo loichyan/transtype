@@ -274,7 +274,15 @@ fn transform_impl(
                         match output {
                             ExecuteState::Executed { state: s } => state = s,
                             ExecuteState::Unsupported { cmd, data } => {
-                                break cmd.execute(data, rest);
+                                let span = rest.span();
+                                let PipeCommand { path, args, .. } = cmd;
+                                break quote_spanned!(span=>
+                                    #path! {
+                                        data={#data}
+                                        args={#args}
+                                        rest={#rest}
+                                    }
+                                );
                             }
                         }
                     }
