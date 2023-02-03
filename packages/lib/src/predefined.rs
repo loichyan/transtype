@@ -8,10 +8,9 @@ use syn::{
 pub fn expand(input: TokenStream) -> Result<TokenStream> {
     let PredefinedInput { args, data, extra } = syn::parse2(input)?;
     let PredefinedArgs { rest } = args.content;
-    TransformState::pipe(data.content)
-        .extra(extra.content)
-        .build()
-        .transform(rest.content)
+    let mut rest = rest.content;
+    rest.with_extra(extra.content);
+    TransformState::pipe(data.content).build().transform(rest)
 }
 
 pub struct PredefinedInput {

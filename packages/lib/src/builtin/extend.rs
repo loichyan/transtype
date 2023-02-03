@@ -16,11 +16,12 @@ impl Transformer for Extend {
     ) -> Result<TransformState> {
         let span = rest.span();
         Ok(match args {
-            ExtendArgs::Path(path) => TransformState::resume(path)
-                .pipe(parse_quote_spanned!(span=>
+            ExtendArgs::Path(path) => {
+                rest.with_pipe(parse_quote_spanned!(span=>
                     -> extend(as #data)
-                ))
-                .build(),
+                ));
+                TransformState::resume(path).build()
+            }
             ExtendArgs::As(ExtendAs { data: mut dest, .. }) => {
                 match (&mut dest.data, data.data) {
                     (Data::Struct(dest), Data::Struct(src)) => {

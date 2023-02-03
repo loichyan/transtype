@@ -7,10 +7,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
     let span = data.span();
     let name = &data.ident;
     let path = parse_quote_spanned!(span=> #name);
-    state::Save {
-        data,
-        hook: Default::default(),
-    }
-    .build()
-    .transform(TransformRest::empty(path))
+    state::Save { data }
+        .build()
+        .transform(TransformRest::empty(path))
 }

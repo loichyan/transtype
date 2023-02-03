@@ -1,7 +1,4 @@
-use crate::{
-    builtin, kw, state, transform::StateHook, ForkCommand, ListOf, NamedArg, PipeCommand,
-    TransformState,
-};
+use crate::{builtin, kw, state, ForkCommand, ListOf, NamedArg, PipeCommand, TransformState};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote_spanned, ToTokens};
 use std::marker::PhantomData;
@@ -84,9 +81,21 @@ impl TransformRest {
             .unwrap_or_else(|| path.span())
     }
 
-    /// Appends tokens which will always be expanded to the final stream.
-    pub fn append_mark(&mut self, marker: TokenStream) {
+    pub fn with_pipe(&mut self, pipe: ListOf<PipeCommand>) -> &mut Self {
+        self.pipe
+            .content
+            .extend(pipe.into_inner().into_iter().rev());
+        self
+    }
+
+    pub fn with_extra(&mut self, extra: TokenStream) -> &mut Self {
+        self.extra.content.extend(extra);
+        self
+    }
+
+    pub fn with_marker(&mut self, marker: TokenStream) -> &mut Self {
         self.marker.content.extend(marker);
+        self
     }
 
     pub(crate) fn empty(path: Path) -> Self {
@@ -101,7 +110,7 @@ impl TransformRest {
     pub(crate) fn track_builtin(&mut self) {
         let span = self.span();
         let path = &self.this.content;
-        self.append_mark(quote_spanned!(span=> ::transtype::#path!{}));
+        self.with_marker(quote_spanned!(span=> ::transtype::#path!{}));
     }
 
     fn is_empty(&self) -> bool {
@@ -114,33 +123,6 @@ impl TransformRest {
 
     fn next_pipe(&mut self) -> Option<PipeCommand> {
         self.pipe.content.pop()
-    }
-
-    fn hook(&mut self, hook: StateHook) {
-        let StateHook {
-            pipe,
-            extra,
-            marker,
-        } = hook;
-        if let Some(pipe) = pipe {
-            self.prepend_pipe(pipe);
-        }
-        if let Some(extra) = extra {
-            self.append_extra(extra);
-        }
-        if let Some(marker) = marker {
-            self.append_mark(marker);
-        }
-    }
-
-    fn prepend_pipe(&mut self, pipe: ListOf<PipeCommand>) {
-        self.pipe
-            .content
-            .extend(pipe.into_inner().into_iter().rev());
-    }
-
-    fn append_extra(&mut self, extra: TokenStream) {
-        self.extra.content.extend(extra);
     }
 
     fn fork(&self, mut pipe: ListOf<PipeCommand>) -> Self {
@@ -187,15 +169,18 @@ impl TransformState {
         self.transform_with::<NoopExecutor>(rest)
     }
 
-    pub(crate) fn transform_with<T: Executor>(self, rest: TransformRest) -> Result<TokenStream> {
-        transform_impl(self, rest, WithBuiltinExecutor::<T>::execute)
+    pub(crate) fn transform_with<T: Executor>(
+        self,
+        mut rest: TransformRest,
+    ) -> Result<TokenStream> {
+        transform_impl(self, &mut rest, WithBuiltinExecutor::<T>::execute)
     }
 }
 
 // TODO: put `marker` to the output when error occurs
 fn transform_impl(
     mut state: TransformState,
-    mut rest: TransformRest,
+    rest: &mut TransformRest,
     execute: fn(PipeCommand, DeriveInput, &mut TransformRest) -> Result<ExecuteState>,
 ) -> Result<TokenStream> {
     type State = TransformState;
@@ -203,8 +188,7 @@ fn transform_impl(
 
     Ok(loop {
         match state.0 {
-            Ty::Consume(state::Consume { mut data, hook }) => {
-                rest.hook(hook);
+            Ty::Consume(state::Consume { mut data }) => {
                 if !rest.is_empty() {
                     return Err(syn::Error::new(
                         rest.span(),
@@ -215,8 +199,7 @@ fn transform_impl(
                 data.extend(rest.take_mark());
                 break data;
             }
-            Ty::Debug(state::Debug { data, args, hook }) => {
-                rest.hook(hook);
+            Ty::Debug(state::Debug { data, args }) => {
                 let span = rest.span();
                 let name = format_ident!("DEBUG_{}", data.ident, span = span);
                 let rest = TransformRest {
@@ -241,69 +224,67 @@ fn transform_impl(
                 ))
                 .build();
             }
-            Ty::Fork(state::Fork { data, fork, hook }) => {
-                rest.hook(hook);
+            Ty::Fork(state::Fork { data, fork }) => {
                 if let Some(fork) = fork {
                     let mut tokens = TokenStream::default();
                     for ForkCommand(fork) in fork {
                         let mut data = data.clone();
                         data.ident = fork.name;
-                        let rest = rest.fork(fork.content);
-                        tokens.extend(transform_impl(State::pipe(data).build(), rest, execute)?);
+                        let mut rest = rest.fork(fork.content);
+                        tokens.extend(transform_impl(
+                            State::pipe(data).build(),
+                            &mut rest,
+                            execute,
+                        )?);
                     }
                     state = State::consume(tokens).build();
                 } else {
                     state = State::consume(data.into_token_stream()).build();
                 }
             }
-            Ty::Pipe(state::Pipe { data, hook }) => {
-                rest.hook(hook);
-                match rest.next_pipe() {
-                    Some(cmd) => {
-                        rest.set_this(cmd.path().clone());
-                        let output = match execute(cmd, data, &mut rest) {
-                            Ok(t) => t,
-                            Err(mut e) => {
-                                e.combine(syn::Error::new(
-                                    rest.span(),
-                                    "an error occurs in this command",
-                                ));
-                                return Err(e);
-                            }
-                        };
-                        match output {
-                            ExecuteState::Executed { state: s } => state = s,
-                            ExecuteState::Unsupported { cmd, data } => {
-                                let span = rest.span();
-                                let PipeCommand { path, args, .. } = cmd;
-                                break quote_spanned!(span=>
-                                    #path! {
-                                        data={#data}
-                                        args={#args}
-                                        rest={#rest}
-                                    }
-                                );
-                            }
+            Ty::Pipe(state::Pipe { data }) => match rest.next_pipe() {
+                Some(cmd) => {
+                    rest.set_this(cmd.path().clone());
+                    let output = match execute(cmd, data, rest) {
+                        Ok(t) => t,
+                        Err(mut e) => {
+                            e.combine(syn::Error::new(
+                                rest.span(),
+                                "an error occurs in this command",
+                            ));
+                            return Err(e);
+                        }
+                    };
+                    match output {
+                        ExecuteState::Executed { state: s } => state = s,
+                        ExecuteState::Unsupported { cmd, data } => {
+                            let span = rest.span();
+                            let PipeCommand { path, args, .. } = cmd;
+                            break quote_spanned!(span=>
+                                #path! {
+                                    data={#data}
+                                    args={#args}
+                                    rest={#rest}
+                                }
+                            );
                         }
                     }
-                    None => {
-                        return Err(syn::Error::new(
-                            rest.span(),
-                            "a pipe command should be consumed",
-                        ));
-                    }
                 }
-            }
-            Ty::Resume(state::Resume { path, hook }) => {
-                rest.hook(hook);
+                None => {
+                    return Err(syn::Error::new(
+                        rest.span(),
+                        "a pipe command should be consumed",
+                    ));
+                }
+            },
+            Ty::Resume(state::Resume { path }) => {
                 rest.set_this(path.clone());
                 let span = rest.span();
                 break quote_spanned!(span=>
                     #path! { rest={#rest} }
                 );
             }
-            Ty::Save(state::Save { data, hook }) => {
-                rest.hook(hook);
+            Ty::Save(state::Save { data }) => {
                 let span = rest.span();
                 let name = &data.ident;
                 let extra = rest.take_extra();

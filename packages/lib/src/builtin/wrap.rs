@@ -83,6 +83,7 @@ impl Transformer for Wrapped {
                 }
             }
         );
-        Ok(TransformState::pipe(data).extra(extra).build())
+        rest.with_extra(extra);
+        Ok(TransformState::pipe(data).build())
     }
 }

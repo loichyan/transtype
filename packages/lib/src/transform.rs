@@ -41,55 +41,58 @@ impl From<state::Type> for TransformState {
 
 type OptNamedArg<K, V> = Option<NamedArg<K, V>>;
 
-macro_rules! define_hook {
-    ($(+$f_name:ident: $f_ty:ty,)*) => {
-        #[derive(Default)]
-        pub(crate) struct StateHook {
-            $(pub $f_name: Option<$f_ty>,)*
-        }
-
-        struct AstHook {
-            $($f_name: OptNamedArg<kw::$f_name, $f_ty>,)*
-        }
-
-        impl AstHook {
-            pub fn build(self) -> StateHook {
-                StateHook { $($f_name: self.$f_name.map(content),)* }
-            }
-        }
-    };
-}
-
-define_hook! {
-    +pipe: ListOf<PipeCommand>,
-    +extra: TokenStream,
-    +marker: TokenStream,
-}
-
 macro_rules! define_types {
-    (enum $name:ident {$(
-        $(#[$attr:meta])*
-        $key:ident => $variant:ident { $($body:tt)* },
-    )*}) => {
+    (enum $name:ident {
+        $(+$h:ident => $h_fn:ident($h_ty:ty),)*
+        $($(#[$attr:meta])* $key:ident => $variant:ident $body:tt,)*
+    }) => {
+        struct Hook {
+            $($h: OptNamedArg<kw::$h, $h_ty>,)*
+        }
+
+        impl Hook {
+            pub fn apply(self, mut rest: TransformRest) -> TransformRest {
+                $(if let Some(content) = self.$h.map(content) {
+                    rest.$h_fn(content);
+                })*
+                rest
+            }
+        }
+
         define_types! {
-            @inner
+            @hook
             enum $name {
-                $($(#[$attr])* $key => $variant {
-                    $($body)*
-                    +pipe: ListOf<PipeCommand>,
-                    +extra: TokenStream,
-                    +marker: TokenStream,
-                },)*
+                hook={struct Hook { $($h,)* }}
+                $(rest={
+                    attr={$(#[$attr])*}
+                    key={$key}
+                    variant={$variant}
+                    body=$body
+                })*
             }
         }
     };
-    (@inner enum $name:ident {$(
-        $(#[$attr:meta])*
-        $key:ident => $variant:ident {
+    (@hook enum $name:ident {
+        hook=$hook:tt
+        $(rest={$($rest:tt)*})*
+    }) => {
+        define_types! {
+            @final
+            enum $name {$(
+                hook=$hook
+                $($rest)*
+            )*}
+        }
+    };
+    (@final enum $name:ident {$(
+        hook={struct $hook:ident { $($h_name:ident,)* }}
+        attr={$($attr:tt)*}
+        key={$key:ident}
+        variant={$variant:ident}
+        body={
             $(!$f1_name:ident: $f1_ty:ty,)*
             $(?$f2_name:ident: $f2_ty:ty,)*
-            $(+$f3_name:ident: $f3_ty:ty,)*
-        },
+        }
     )*}) => {
         pub mod state {
             use super::*;
@@ -100,16 +103,14 @@ macro_rules! define_types {
 
 
             $(pub struct $variant {
-                pub(crate) hook: StateHook,
                 $(pub(crate) $f1_name: $f1_ty,)*
                 $(pub(crate) $f2_name: Option<$f2_ty>,)*
             }
 
             impl TransformState {
-                $(#[$attr])*
+                $($attr)*
                 pub fn $key($($f1_name: $f1_ty,)*) -> $variant {
                     $variant {
-                        hook: StateHook::default(),
                         $($f1_name,)*
                         $($f2_name: None,)*
                     }
@@ -120,16 +121,6 @@ macro_rules! define_types {
                 $(pub fn $f2_name(self, $f2_name: $f2_ty) -> Self {
                     Self {
                         $f2_name: Some($f2_name),
-                        ..self
-                    }
-                })*
-
-                $(pub fn $f3_name(self, $f3_name: $f3_ty) -> Self {
-                    Self {
-                        hook: StateHook {
-                            $f3_name: Some($f3_name),
-                            ..self.hook
-                        },
                         ..self
                     }
                 })*
@@ -162,11 +153,10 @@ macro_rules! define_types {
                     match self {$(
                         Self::$variant(t) => (
                             state::$name::$variant(state::$variant {
-                                hook: t.hook.build(),
                                 $($f1_name: t.$f1_name.content,)*
                                 $($f2_name: t.$f2_name.map(content),)*
                             }),
-                            t.rest.content,
+                            t.hook.apply(t.rest.content),
                         ),
                     )*}
                 }
@@ -176,7 +166,7 @@ macro_rules! define_types {
             pub(crate) struct $variant {
                 name: kw::$key,
                 rest: NamedArg<kw::rest, TransformRest>,
-                hook: AstHook,
+                hook: $hook,
                 $($f1_name: NamedArg<kw::$f1_name, $f1_ty>,)*
                 $($f2_name: OptNamedArg<kw::$f2_name, $f2_ty>,)*
             }
@@ -185,12 +175,12 @@ macro_rules! define_types {
                 fn parse(input: ParseStream) -> Result<Self> {
                     let name = input.parse::<kw::$key>()?;
                     let _span = name.span();
-                    parse_named_args!(input, kw => rest, $($f1_name,)* $($f2_name,)* $($f3_name,)*);
+                    parse_named_args!(input, kw => rest, $($f1_name,)* $($f2_name,)* $($h_name,)*);
                     require_named_args!(_span => rest, $($f1_name,)*);
                     Ok(Self {
                         name,
                         rest,
-                        hook: AstHook { $($f3_name,)* },
+                        hook: $hook { $($h_name,)* },
                         $($f1_name,)*
                         $($f2_name,)*
                     })
@@ -202,6 +192,11 @@ macro_rules! define_types {
 
 define_types! {
     enum Type {
+        // Parse hook arguments.
+        +pipe   => with_pipe(ListOf<PipeCommand>),
+        +extra  => with_extra(TokenStream),
+        +marker => with_marker(TokenStream),
+
         /// ```
         /// transform! {
         ///     @consume
@@ -212,6 +207,7 @@ define_types! {
         consume => Consume {
             !data: TokenStream,
         },
+
         /// ```
         /// transform! {
         ///     @debug
@@ -236,6 +232,7 @@ define_types! {
             !data: DeriveInput,
             ?fork: ListOf<ForkCommand>,
         },
+
         /// ```
         /// transform! {
         ///     @pipe
@@ -246,6 +243,7 @@ define_types! {
         pipe => Pipe {
             !data: DeriveInput,
         },
+
         /// ```
         /// transform! {
         ///     @resume
@@ -256,6 +254,7 @@ define_types! {
         resume => Resume {
             !path: Path,
         },
+
         /// ```
         /// transform! {
         ///     @save
