@@ -6,10 +6,10 @@ use syn::{
 };
 
 pub fn expand(input: TokenStream) -> Result<TokenStream> {
-    let PredefinedInput { args, data, plus } = syn::parse2(input)?;
+    let PredefinedInput { args, data, extra } = syn::parse2(input)?;
     let PredefinedArgs { rest } = args.content;
     TransformState::pipe(data.content)
-        .plus(plus.content)
+        .extra(extra.content)
         .build()
         .transform(rest.content)
 }
@@ -17,7 +17,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
 pub struct PredefinedInput {
     pub args: NamedArg<kw::args, PredefinedArgs>,
     pub data: NamedArg<kw::data, DeriveInput>,
-    pub plus: NamedArg<kw::plus, TokenStream>,
+    pub extra: NamedArg<kw::extra, TokenStream>,
 }
 
 impl Parse for PredefinedInput {
@@ -25,7 +25,7 @@ impl Parse for PredefinedInput {
         Ok(Self {
             args: input.parse()?,
             data: input.parse()?,
-            plus: input.parse()?,
+            extra: input.parse()?,
         })
     }
 }

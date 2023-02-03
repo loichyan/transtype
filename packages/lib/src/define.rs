@@ -12,7 +12,7 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
                 ::transtype::__predefined! {
                     args={$($args)*}
                     data={#data}
-                    plus={}
+                    extra={}
                 }
             };
         }

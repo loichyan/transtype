@@ -24,10 +24,10 @@ mod kw {
     custom_keyword!(args);
     custom_keyword!(consume);
     custom_keyword!(data);
-    custom_keyword!(mark);
+    custom_keyword!(marker);
     custom_keyword!(path);
     custom_keyword!(pipe);
-    custom_keyword!(plus);
+    custom_keyword!(extra);
     custom_keyword!(rest);
     custom_keyword!(resume);
     custom_keyword!(this);
@@ -85,8 +85,8 @@ pub enum TransformState {
     ///     @pipe
     ///     data={#data}
     ///     pipe={#pipe}
-    ///     plus={#plus}
-    ///     mark={#mark}
+    ///     extra={#extra}
+    ///     marker={#marker}
     ///     rest={#rest}
     /// }
     /// ```
@@ -131,8 +131,8 @@ impl TransformState {
         TransformPipe {
             data,
             pipe: Default::default(),
-            plus: Default::default(),
-            mark: Default::default(),
+            extra: Default::default(),
+            marker: Default::default(),
         }
     }
 
@@ -200,8 +200,8 @@ impl TransformFork {
 pub struct TransformPipe {
     data: DeriveInput,
     pipe: Option<ListOf<PipeCommand>>,
-    plus: Option<TokenStream>,
-    mark: Option<TokenStream>,
+    extra: Option<TokenStream>,
+    marker: Option<TokenStream>,
 }
 
 impl TransformPipe {
@@ -212,16 +212,16 @@ impl TransformPipe {
         }
     }
 
-    pub fn plus(self, plus: TokenStream) -> Self {
+    pub fn extra(self, extra: TokenStream) -> Self {
         Self {
-            plus: Some(plus),
+            extra: Some(extra),
             ..self
         }
     }
 
-    pub fn mark(self, mark: TokenStream) -> Self {
+    pub fn marker(self, marker: TokenStream) -> Self {
         Self {
-            mark: Some(mark),
+            marker: Some(marker),
             ..self
         }
     }

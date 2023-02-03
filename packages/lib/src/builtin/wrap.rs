@@ -74,7 +74,7 @@ impl Transformer for Wrapped {
             _ => unreachable!(),
         }
         let name = &data.ident;
-        let plus = quote_spanned!(span=>
+        let extra = quote_spanned!(span=>
             impl ::transtype::Wrapped for #name {
                 type Original = #from;
 
@@ -83,6 +83,6 @@ impl Transformer for Wrapped {
                 }
             }
         );
-        Ok(TransformState::pipe(data).plus(plus).build())
+        Ok(TransformState::pipe(data).extra(extra).build())
     }
 }

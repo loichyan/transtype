@@ -23,15 +23,15 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
             let TransformPipe {
                 data,
                 pipe,
-                plus,
-                mark,
+                extra,
+                marker,
                 ..
             } = ty;
             state = crate::TransformPipe {
                 data: data.content,
                 pipe: pipe.map(content),
-                plus: plus.map(content),
-                mark: mark.map(content),
+                extra: extra.map(content),
+                marker: marker.map(content),
             }
             .build();
         }
@@ -153,8 +153,8 @@ struct TransformPipe {
     name: kw::pipe,
     data: NamedArg<kw::data, DeriveInput>,
     pipe: OptNamedArg<kw::pipe, ListOf<PipeCommand>>,
-    plus: OptNamedArg<kw::plus, TokenStream>,
-    mark: OptNamedArg<kw::mark, TokenStream>,
+    extra: OptNamedArg<kw::extra, TokenStream>,
+    marker: OptNamedArg<kw::marker, TokenStream>,
     rest: NamedArg<kw::rest, TransformRest>,
 }
 
@@ -162,14 +162,14 @@ impl Parse for TransformPipe {
     fn parse(input: ParseStream) -> Result<Self> {
         let name = input.parse::<kw::pipe>()?;
         let span = name.span();
-        parse_optional!(input => data, pipe, plus, mark, rest);
+        parse_optional!(input => data, pipe, extra, marker, rest);
         assert_some!(span=> data, rest);
         Ok(Self {
             name,
             data,
             pipe,
-            plus,
-            mark,
+            extra,
+            marker,
             rest,
         })
     }

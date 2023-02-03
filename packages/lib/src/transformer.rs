@@ -70,8 +70,8 @@ impl<T: Transformer> Parse for TransformInput<T> {
 pub struct TransformRest {
     this: NamedArg<kw::this, Path>,
     pipe: NamedArg<kw::pipe, ListOf<PipeCommand>>,
-    plus: NamedArg<kw::plus, TokenStream>,
-    mark: NamedArg<kw::mark, TokenStream>,
+    extra: NamedArg<kw::extra, TokenStream>,
+    marker: NamedArg<kw::marker, TokenStream>,
 }
 
 impl TransformRest {
@@ -85,16 +85,16 @@ impl TransformRest {
     }
 
     /// Appends tokens which will always be expanded to the final stream.
-    pub fn append_mark(&mut self, mark: TokenStream) {
-        self.mark.content.extend(mark);
+    pub fn append_mark(&mut self, marker: TokenStream) {
+        self.marker.content.extend(marker);
     }
 
     pub(crate) fn empty(path: Path) -> Self {
         Self {
             this: NamedArg::new(path),
             pipe: Default::default(),
-            plus: Default::default(),
-            mark: Default::default(),
+            extra: Default::default(),
+            marker: Default::default(),
         }
     }
 
@@ -122,8 +122,8 @@ impl TransformRest {
             .extend(pipe.into_inner().into_iter().rev());
     }
 
-    fn append_plus(&mut self, plus: TokenStream) {
-        self.plus.content.extend(plus);
+    fn append_extra(&mut self, extra: TokenStream) {
+        self.extra.content.extend(extra);
     }
 
     fn fork(&self, mut pipe: ListOf<PipeCommand>) -> Self {
@@ -131,17 +131,17 @@ impl TransformRest {
         Self {
             this: self.this.clone(),
             pipe: self.pipe.clone_with(pipe),
-            plus: self.plus.clone(),
-            mark: self.mark.clone(),
+            extra: self.extra.clone(),
+            marker: self.marker.clone(),
         }
     }
 
-    fn take_plus(&mut self) -> TokenStream {
-        std::mem::take(&mut self.plus.content)
+    fn take_extra(&mut self) -> TokenStream {
+        std::mem::take(&mut self.extra.content)
     }
 
     fn take_mark(&mut self) -> TokenStream {
-        std::mem::take(&mut self.mark.content)
+        std::mem::take(&mut self.marker.content)
     }
 }
 
@@ -150,8 +150,8 @@ impl Parse for TransformRest {
         Ok(Self {
             this: input.parse()?,
             pipe: input.parse()?,
-            plus: input.parse()?,
-            mark: input.parse()?,
+            extra: input.parse()?,
+            marker: input.parse()?,
         })
     }
 }
@@ -160,8 +160,8 @@ impl ToTokens for TransformRest {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         self.this.to_tokens(tokens);
         self.pipe.to_tokens(tokens);
-        self.plus.to_tokens(tokens);
-        self.mark.to_tokens(tokens);
+        self.extra.to_tokens(tokens);
+        self.marker.to_tokens(tokens);
     }
 }
 
@@ -175,6 +175,8 @@ impl TransformState {
     }
 }
 
+// TODO: put `marker` to the output when error occurs
+// TODO: add `hook` allows hook rest content
 fn transform_impl(
     mut state: TransformState,
     mut rest: TransformRest,
@@ -191,7 +193,7 @@ fn transform_impl(
                         "a consume command should not be followed by other commands",
                     ));
                 }
-                data.extend(rest.take_plus());
+                data.extend(rest.take_extra());
                 data.extend(rest.take_mark());
                 break data;
             }
@@ -201,8 +203,8 @@ fn transform_impl(
                 let rest = TransformRest {
                     this: rest.this.clone(),
                     pipe: rest.pipe.take(),
-                    plus: rest.plus.take(),
-                    mark: rest.mark.clone(),
+                    extra: rest.extra.take(),
+                    marker: rest.marker.clone(),
                 };
                 let data = quote_spanned!(span=>
                     data={#data}
@@ -237,17 +239,17 @@ fn transform_impl(
             State::Pipe(TransformPipe {
                 data,
                 pipe,
-                plus,
-                mark,
+                extra,
+                marker,
             }) => {
                 if let Some(pipe) = pipe {
                     rest.prepend_pipe(pipe);
                 }
-                if let Some(plus) = plus {
-                    rest.append_plus(plus);
+                if let Some(extra) = extra {
+                    rest.append_extra(extra);
                 }
-                if let Some(mark) = mark {
-                    rest.append_mark(mark);
+                if let Some(marker) = marker {
+                    rest.append_mark(marker);
                 }
                 match rest.next_pipe() {
                     Some(cmd) => {
@@ -290,14 +292,14 @@ fn transform_impl(
             State::Save(TransformSave { data, name }) => {
                 let span = rest.span();
                 let name = name.as_ref().unwrap_or(&data.ident);
-                let plus = rest.take_plus();
+                let extra = rest.take_extra();
                 state = State::consume(quote_spanned!(span=>
                     macro_rules! #name {
                         ($($args:tt)*) => {
                             ::transtype::__predefined! {
                                 args={$($args)*}
                                 data={#data}
-                                plus={#plus}
+                                extra={#extra}
                             }
                         };
                     }
