@@ -113,10 +113,6 @@ impl TransformRest {
         self.with_marker(quote_spanned!(span=> ::transtype::#path!{}));
     }
 
-    fn is_empty(&self) -> bool {
-        self.pipe.content.is_empty()
-    }
-
     fn set_this(&mut self, this: Path) {
         self.this.content = this;
     }
@@ -135,12 +131,17 @@ impl TransformRest {
         }
     }
 
-    fn take_extra(&mut self) -> TokenStream {
-        std::mem::take(&mut self.extra.content)
+    fn take(&mut self) -> Self {
+        Self {
+            this: self.this.clone(),
+            pipe: self.pipe.take(),
+            extra: self.extra.take(),
+            marker: self.marker.clone(),
+        }
     }
 
-    fn take_mark(&mut self) -> TokenStream {
-        std::mem::take(&mut self.marker.content)
+    fn take_extra(&mut self) -> TokenStream {
+        std::mem::take(&mut self.extra.content)
     }
 }
 
@@ -173,11 +174,21 @@ impl TransformState {
         self,
         mut rest: TransformRest,
     ) -> Result<TokenStream> {
-        transform_impl(self, &mut rest, WithBuiltinExecutor::<T>::execute)
+        let mut tokens = match transform_impl(self, &mut rest, WithBuiltinExecutor::<T>::execute) {
+            Ok(tokens) => {
+                if cfg!(debug_assertions) {
+                    assert!(rest.pipe.content.is_empty());
+                    assert!(rest.extra.content.is_empty());
+                }
+                tokens
+            }
+            Err(err) => err.into_compile_error(),
+        };
+        tokens.extend(std::mem::take(&mut rest.marker.content));
+        Ok(tokens)
     }
 }
 
-// TODO: put `marker` to the output when error occurs
 fn transform_impl(
     mut state: TransformState,
     rest: &mut TransformRest,
@@ -189,25 +200,19 @@ fn transform_impl(
     Ok(loop {
         match state.0 {
             Ty::Consume(state::Consume { mut data }) => {
-                if !rest.is_empty() {
+                if !rest.pipe.content.is_empty() {
                     return Err(syn::Error::new(
                         rest.span(),
                         "a consume command should not be followed by other commands",
                     ));
                 }
                 data.extend(rest.take_extra());
-                data.extend(rest.take_mark());
                 break data;
             }
             Ty::Debug(state::Debug { data, args }) => {
                 let span = rest.span();
                 let name = format_ident!("DEBUG_{}", data.ident, span = span);
-                let rest = TransformRest {
-                    this: rest.this.clone(),
-                    pipe: rest.pipe.take(),
-                    extra: rest.extra.take(),
-                    marker: rest.marker.clone(),
-                };
+                let rest = rest.take();
                 let data = quote_spanned!(span=>
                     data={#data}
                     args={#args}
@@ -260,13 +265,15 @@ fn transform_impl(
                         ExecuteState::Unsupported { cmd, data } => {
                             let span = rest.span();
                             let PipeCommand { path, args, .. } = cmd;
-                            break quote_spanned!(span=>
+                            let rest = rest.take();
+                            state = State::consume(quote_spanned!(span=>
                                 #path! {
                                     data={#data}
                                     args={#args}
                                     rest={#rest}
                                 }
-                            );
+                            ))
+                            .build();
                         }
                     }
                 }
@@ -280,9 +287,8 @@ fn transform_impl(
             Ty::Resume(state::Resume { path }) => {
                 rest.set_this(path.clone());
                 let span = rest.span();
-                break quote_spanned!(span=>
-                    #path! { rest={#rest} }
-                );
+                let rest = rest.take();
+                state = State::consume(quote_spanned!(span=> #path! { rest={#rest} })).build();
             }
             Ty::Save(state::Save { data }) => {
                 let span = rest.span();
